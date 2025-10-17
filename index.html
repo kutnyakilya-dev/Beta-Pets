@@ -5,33 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pet Farm Clicker</title>
     
-    <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.tailwindcss.com"></script>
     
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     
-    <script type="module">
-        // --- Импорт функций Firebase ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
-
-        // --- Конфигурация Firebase ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyARZvFpMMn5t8pg5gb2bWA6OrZC1L8DBSA",
-            authDomain: "my-pet-c8684.firebaseapp.com",
-            projectId: "my-pet-c8684",
-            storageBucket: "my-pet-c8684.firebasestorage.app",
-            messagingSenderId: "102742166711",
-            appId: "1:102742166711:web:aa6b251fd6d6c993c71132"
-        };
-
-        // --- Инициализация Firebase ---
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-
+<script type="module">
         // --- Глобальные настройки и состояние ---
         const CURRENT_UPDATE_VERSION = '2.1.7 Hotfix'; // Изменено
         const PASSIVE_TICK_RATE = 1000; 
@@ -749,18 +729,13 @@
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
 
-        // --- Новая структура инициализации игры ---
-        
-        // Эта функция содержит оригинальную логику загрузки игры.
-        // Она будет вызвана только после успешной аутентификации Firebase.
-        function loadGameDataAndSetup() {
+        async function initGame() {
+            updateAppState(false); 
             window.gameState.paws = loadPaws();
             migrateInventory(); 
             window.gameState.isDbReady = true;
             updatePawsDisplay();
             updateAppState(true); 
-            
-            // Установка слушателей и других функций, зависящих от состояния игры
             document.addEventListener('visibilitychange', handleVisibilityChange);
             managePassiveLoop(); 
             window.setupNavigation();
@@ -769,37 +744,6 @@
             setupResetConfirmationListener();
             requestWakeLock();
             window.checkAndShowUpdatesScreen(); 
-        }
-
-        // Главная функция инициализации
-        async function initGame() {
-            updateAppState(false); // Отключаем UI на время загрузки
-
-            // Слушатель состояния аутентификации Firebase
-            onAuthStateChanged(auth, (user) => {
-                if (user) {
-                    // Пользователь вошел (анонимно)
-                    const uid = user.uid;
-                    console.log("Firebase User connected with UID:", uid);
-                    document.getElementById('user-id-display').textContent = `UID: ${uid.substring(0, 12)}...`;
-                    
-                    // Теперь, когда пользователь есть, загружаем остальные данные игры
-                    loadGameDataAndSetup();
-                } else {
-                    // Пользователь не вошел, пытаемся войти анонимно
-                    console.log("No user found, signing in anonymously...");
-                    signInAnonymously(auth).catch((error) => {
-                        console.error("Anonymous sign-in failed:", error.code, error.message);
-                        document.getElementById('user-id-display').textContent = 'Ошибка подключения';
-                        // Улучшенная обработка ошибок
-                        if (error.code === 'auth/configuration-not-found') {
-                            showToast("Ошибка: Анонимный вход не включен в консоли Firebase.");
-                        } else {
-                            showToast("Не удалось подключиться к серверам.");
-                        }
-                    });
-                }
-            });
         }
         
         window.setupNavigation = function() {
@@ -876,7 +820,7 @@
         <div class="text-white text-xl font-black tracking-wider">Pet Farm</div>
         <div class="flex flex-col items-end">
             <p id="paws-display" class="text-lg font-extrabold text-orange-400">Лапки: 0.00</p>
-            <p id="user-id-display" class="text-xs text-gray-400 mt-0">Подключение...</p>
+            <p id="user-id-display" class="text-xs text-gray-400 mt-0">Локальное хранилище</p>
         </div>
     </header>
 
@@ -998,7 +942,25 @@
              <button onclick="window.closePetPreview()" class="w-full mt-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Закрыть</button>
         </div>
     </div>
+<script type="module">
+  // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+  // https://firebase.google.com/docs/web/setup#available-libraries
 
+  // Your web app's Firebase configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyARZvFpMMn5t8pg5gb2bWA6OrZC1L8DBSA",
+    authDomain: "my-pet-c8684.firebaseapp.com",
+    projectId: "my-pet-c8684",
+    storageBucket: "my-pet-c8684.firebasestorage.app",
+    messagingSenderId: "102742166711",
+    appId: "1:102742166711:web:aa6b251fd6d6c993c71132"
+  };
+
+  // Initialize Firebase
+  const app = initializeApp(firebaseConfig);
+</script>
 </body>
 </html>
 
