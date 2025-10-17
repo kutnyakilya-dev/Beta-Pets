@@ -5,15 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pet Farm Clicker</title>
     
-<script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
     
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
     
-<script type="module">
+    <script type="module">
+        // --- Импорт функций Firebase ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // --- Конфигурация Firebase ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyARZvFpMMn5t8pg5gb2bWA6OrZC1L8DBSA",
+            authDomain: "my-pet-c8684.firebaseapp.com",
+            projectId: "my-pet-c8684",
+            storageBucket: "my-pet-c8684.firebasestorage.app",
+            messagingSenderId: "102742166711",
+            appId: "1:102742166711:web:aa6b251fd6d6c993c71132"
+        };
+
+        // --- Инициализация Firebase ---
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
         // --- Глобальные настройки и состояние ---
-        const CURRENT_UPDATE_VERSION = '2.1.2 Security'; // Изменено
+        const CURRENT_UPDATE_VERSION = '2.1.7 Hotfix'; // Изменено
         const PASSIVE_TICK_RATE = 1000; 
         const SOUND_COOLDOWN = 150; 
         let passiveIntervalId = null; 
@@ -88,13 +108,14 @@
             return 3;
         }
         
-        let clickPlayer, navClickSynth, isMusicPlaying = false; 
+        let clickPlayer, navClickSynth, reelTickSynth, isMusicPlaying = false; 
         function playMusic() {
             const audio = document.getElementById('backgroundMusic');
             if (!isMusicPlaying) { audio.volume = 0.2; audio.play().then(() => { isMusicPlaying = true; }).catch(e => { console.warn("Ошибка автозапуска фоновой музыки:", e); }); }
         }
         try { clickPlayer = new Tone.PluckSynth().toDestination(); clickPlayer.volume.value = -10; } catch (e) { console.error("Критическая ошибка инициализации PluckSynth:", e); }
         try { navClickSynth = new Tone.MembraneSynth({ pitchDecay: 0.008, octaves: 0.1, envelope: { attack: 0.001, decay: 0.1, sustain: 0.0, release: 0.05 } }).toDestination(); navClickSynth.volume.value = -12; } catch (e) { console.error("Ошибка инициализации navClickSynth:", e); }
+        try { reelTickSynth = new Tone.Synth({ oscillator: { type: 'sine' }, envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.1 } }).toDestination(); reelTickSynth.volume.value = -18; } catch (e) { console.error("Ошибка инициализации reelTickSynth:", e); }
         
         function playNavClickSound() {
             const now = Date.now();
@@ -103,6 +124,25 @@
             if (Tone.context.state !== 'running') Tone.start();
             if (navClickSynth) { try { const audioNow = Tone.context.currentTime; navClickSynth.triggerAttackRelease("G5", "32n", audioNow); navClickSynth.triggerAttackRelease("A5", "32n", audioNow + 0.05); } catch (e) { console.error("Audio scheduling error:", e); } }
         }
+
+        // --- Screen Wake Lock ---
+        let wakeLock = null;
+        const requestWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Screen Wake Lock is active.');
+                    wakeLock.addEventListener('release', () => {
+                        wakeLock = null;
+                        console.log('Screen Wake Lock was released.');
+                    });
+                } catch (err) {
+                    console.error(`${err.name}, ${err.message}`);
+                }
+            } else {
+                console.warn('Wake Lock API not supported.');
+            }
+        };
 
         function calculateClickValue() {
             let totalBonus = 0;
@@ -229,6 +269,7 @@
         };
 
         window.showSellConfirmation = function(petId) {
+            window.closePetPreview();
             playNavClickSound();
             const pet = window.gameState.inventory.find(p => p.id === petId);
             if (!pet || pet.value === undefined) return showToast("Ошибка: Цена продажи не найдена.");
@@ -255,7 +296,6 @@
             updatePawsDisplay();
             renderInventory();
             showToast(`💰 Продано: ${pet.name} за ${pet.value.toFixed(2)} Лапок!`);
-            window.closePetPreview();
         };
 
         window.equipBestPets = function() {
@@ -335,6 +375,9 @@
         };
         
         function getIconHtml(item, isLarge = false, isReel = false, isPreview = false, isWinModal = false) {
+             if (item.isMegaSecret && isReel && !isWinModal) {
+                return '<div class="w-full h-full flex items-center justify-center text-4xl font-black text-white" style="text-shadow: 0 0 10px #000;">?</div>';
+             }
              let iconUrl = item.icon && item.icon.startsWith('http') ? item.icon : 'https://placehold.co/60x60/374151/fff?text=?';
              const isSecretHidden = item.isHiddenInPreview && (isReel || isPreview) && !isWinModal;
              if (isSecretHidden) iconUrl = item.previewIcon;
@@ -419,8 +462,9 @@
             document.getElementById('add-to-inventory-button').onclick = () => window.closeWinModal();
             modal.style.display = 'flex';
         };
+        
         window.startCaseSpin = function() {
-            playMusic(); 
+            playMusic();
             const caseData = CASES[currentCaseId];
             if (!caseData) { return showToast("Ошибка: Данные кейса не найдены. Попробуйте перезайти."); }
             if (!window.gameState.isDbReady) { return showToast("Подождите, игра еще загружается..."); }
@@ -437,9 +481,51 @@
             const reel = document.getElementById('case-reel');
             reel.style.transition = 'none';
             reel.style.transform = 'translateX(0px)';
-            setTimeout(() => { reel.style.transition = 'transform 5s cubic-bezier(0.2, 0.7, 0.4, 1)'; reel.style.transform = `translateX(${stopOffset}px)`; }, 50); 
-            setTimeout(() => { openButton.disabled = false; window.showWinModal(winningItem); }, 5050); 
+
+            setTimeout(() => {
+                reel.style.transition = 'transform 5s cubic-bezier(0.2, 0.7, 0.4, 1)';
+                reel.style.transform = `translateX(${stopOffset}px)`;
+
+                const itemWidthTotal = 98;
+                let lastItemIndex = -1;
+                const viewportCenterOffset = document.querySelector('.reel-viewport')?.clientWidth / 2 || 0;
+                
+                const tickInterval = setInterval(() => {
+                    const reelEl = document.getElementById('case-reel');
+                    if (!reelEl) {
+                        clearInterval(tickInterval);
+                        return;
+                    }
+                    
+                    const style = window.getComputedStyle(reelEl);
+                    if (!style.transform || style.transform === 'none') return;
+                    
+                    try {
+                        const matrix = new DOMMatrix(style.transform);
+                        const currentX = Math.abs(matrix.m41);
+                        const centeredItemX = currentX + viewportCenterOffset;
+                        const currentItemIndex = Math.floor(centeredItemX / itemWidthTotal);
+
+                        if (currentItemIndex > lastItemIndex) {
+                            lastItemIndex = currentItemIndex;
+                            if (reelTickSynth && Tone.context.state === 'running') {
+                                reelTickSynth.triggerAttackRelease('C6', '8n');
+                            }
+                        }
+                    } catch (e) {
+                       // Failsafe for DOMMatrix parsing
+                    }
+                }, 65);
+
+                setTimeout(() => {
+                    clearInterval(tickInterval);
+                    openButton.disabled = false;
+                    window.showWinModal(winningItem);
+                }, 5050);
+
+            }, 50);
         };
+
         window.showCaseDetails = function(caseId, skipSectionChange = false) {
             currentCaseId = caseId;
             const caseData = CASES[caseId];
@@ -464,8 +550,10 @@
             }
             if (!skipSectionChange) {
                 window.setupNavigation().showSection('case-details');
+                const reel = document.getElementById('case-reel');
+                reel.style.transition = 'none';
                 generateReel(caseData.items[0]); 
-                document.getElementById('case-reel').style.transform = 'translateX(0px)';
+                reel.style.transform = 'translateX(0px)';
             }
         };
 
@@ -473,7 +561,12 @@
             if (!window.gameState.isDbReady || document.hidden) { if (passiveIntervalId !== null) { clearInterval(passiveIntervalId); passiveIntervalId = null; } return; }
             if (passiveIntervalId === null) { passiveIntervalId = setInterval(() => { if (window.gameState.passiveRate > 0) { window.gameState.paws += window.gameState.passiveRate; updatePawsDisplay(); savePaws(window.gameState.paws); } }, PASSIVE_TICK_RATE); }
         }
-        function handleVisibilityChange() { managePassiveLoop(); }
+        function handleVisibilityChange() { 
+            managePassiveLoop();
+            if (!wakeLock && document.visibilityState === 'visible') {
+                requestWakeLock();
+            }
+        }
         
         function performPawsClick() {
             if (!window.gameState.isDbReady) return;
@@ -509,11 +602,12 @@
             });
         }
 
-        // --- Логика просмотра питомца (НОВОЕ) ---
         window.showPetPreview = function(identifier, source) {
             playNavClickSound();
             let petData;
-            if (source === 'inventory') {
+            const isInventoryItem = source === 'inventory';
+
+            if (isInventoryItem) {
                 petData = window.gameState.inventory.find(p => p.id === identifier);
             } else { // source === 'case'
                 petData = ALL_PETS.find(p => p.name === identifier);
@@ -527,25 +621,37 @@
             const nameEl = document.getElementById('pet-preview-name');
             const rarityEl = document.getElementById('pet-preview-rarity');
             const buttonsContainer = document.getElementById('pet-preview-buttons');
+            
+            const isHidden = !isInventoryItem && petData.isHiddenInPreview;
 
-            img.src = petData.icon;
-            img.alt = petData.name;
-            nameEl.textContent = petData.name;
-            nameEl.className = `text-3xl font-extrabold mb-1 ${petData.color}`;
-            rarityEl.textContent = petData.rarity;
-            rarityEl.className = `text-lg mb-6 ${petData.color}`;
-
-            modalContent.classList.remove('modal-secret-glow', 'modal-mega-secret-glow', 'bg-gray-800');
-            if (petData.rarity === 'Секретный') {
-                modalContent.classList.add('modal-secret-glow', 'bg-gray-900');
-            } else if (petData.rarity === 'Мега Секретный') {
-                modalContent.classList.add('modal-mega-secret-glow', 'bg-gray-900');
+            if (isHidden) {
+                img.src = petData.previewIcon;
+                img.alt = "Секретный питомец";
+                nameEl.textContent = petData.previewName || "?????";
+                nameEl.className = "text-3xl font-extrabold mb-1 text-gray-400";
+                rarityEl.textContent = "???";
+                rarityEl.className = "text-lg mb-6 text-gray-400";
+                modalContent.className = 'p-8 rounded-2xl text-center w-full max-w-sm transition-all bg-gray-800';
             } else {
-                 modalContent.classList.add('bg-gray-800');
+                img.src = petData.icon;
+                img.alt = petData.name;
+                nameEl.textContent = petData.name;
+                nameEl.className = `text-3xl font-extrabold mb-1 ${petData.color}`;
+                rarityEl.textContent = petData.rarity;
+                rarityEl.className = `text-lg mb-6 ${petData.color}`;
+
+                modalContent.className = 'p-8 rounded-2xl text-center w-full max-w-sm transition-all'; // Reset
+                if (petData.rarity === 'Секретный') {
+                    modalContent.classList.add('modal-secret-glow', 'bg-gray-900');
+                } else if (petData.rarity === 'Мега Секретный') {
+                    modalContent.classList.add('modal-mega-secret-glow', 'bg-gray-900');
+                } else {
+                    modalContent.classList.add('bg-gray-800');
+                }
             }
 
             buttonsContainer.innerHTML = '';
-            if (source === 'inventory') {
+            if (isInventoryItem) {
                 const isSelected = window.gameState.selectedPets.includes(petData.id);
                 const hasBonus = petData.passiveValue > 0 || petData.clickBonus > 0;
                 
@@ -643,20 +749,52 @@
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
 
-        async function initGame() {
-            updateAppState(false); 
+        // --- Новая структура инициализации игры ---
+        
+        // Эта функция содержит оригинальную логику загрузки игры.
+        // Она будет вызвана только после успешной аутентификации Firebase.
+        function loadGameDataAndSetup() {
             window.gameState.paws = loadPaws();
             migrateInventory(); 
             window.gameState.isDbReady = true;
             updatePawsDisplay();
             updateAppState(true); 
+            
+            // Установка слушателей и других функций, зависящих от состояния игры
             document.addEventListener('visibilitychange', handleVisibilityChange);
             managePassiveLoop(); 
             window.setupNavigation();
             setupUpdatesContent(); 
             setupClickListener(); 
             setupResetConfirmationListener();
+            requestWakeLock();
             window.checkAndShowUpdatesScreen(); 
+        }
+
+        // Главная функция инициализации
+        async function initGame() {
+            updateAppState(false); // Отключаем UI на время загрузки
+
+            // Слушатель состояния аутентификации Firebase
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // Пользователь вошел (анонимно)
+                    const uid = user.uid;
+                    console.log("Firebase User connected with UID:", uid);
+                    document.getElementById('user-id-display').textContent = `UID: ${uid.substring(0, 12)}...`;
+                    
+                    // Теперь, когда пользователь есть, загружаем остальные данные игры
+                    loadGameDataAndSetup();
+                } else {
+                    // Пользователь не вошел, пытаемся войти анонимно
+                    console.log("No user found, signing in anonymously...");
+                    signInAnonymously(auth).catch((error) => {
+                        console.error("Anonymous sign-in failed:", error.code, error.message);
+                        document.getElementById('user-id-display').textContent = 'Ошибка подключения';
+                        showToast("Не удалось подключиться к серверам.");
+                    });
+                }
+            });
         }
         
         window.setupNavigation = function() {
@@ -700,12 +838,18 @@
         .border-red-500 { border-color: #ef4444 !important; } 
         @keyframes rainbow-border { 0%, 100% { border-color: #facc15; box-shadow: 0 0 15px #facc15; } 25% { border-color: #ef4444; box-shadow: 0 0 15px #ef4444; } 50% { border-color: #3b82f6; box-shadow: 0 0 15px #3b82f6; } 75% { border-color: #4ade80; box-shadow: 0 0 15px #4ade80; } }
         .border-rainbow { border-style: solid !important; border-width: 2px !important; animation: rainbow-border 3s infinite alternate; }
-        @keyframes mega-secret-glow { 0%, 100% { box-shadow: 0 0 20px rgba(255, 223, 0, 0.5); background-color: #3f2e00; } 50% { box-shadow: 0 0 30px rgba(255, 165, 0, 1.0); background-color: #5c4300; } }
+        @keyframes mega-secret-glow { 0%, 100% { box-shadow: 0 0 20px rgba(255, 223, 0, 0.5); } 50% { box-shadow: 0 0 30px rgba(255, 165, 0, 1.0); } }
         .border-mega-secret { border-color: #ffdf00 !important; border-width: 4px !important; animation: mega-secret-glow 2s infinite alternate; }
-        .glow-mega-secret { animation: mega-secret-glow 1s infinite alternate; background-color: #3f2e00 !important; }
+        @keyframes rainbow-bg { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        .glow-mega-secret { 
+            background: linear-gradient(45deg, #ffdf00, #ff00c8, #7a00ff, #002bff, #00ffd5, #48ff00, #fffb00, #ff7300);
+            background-size: 400% 400%;
+            animation: rainbow-bg 3s ease infinite, mega-secret-glow 1s infinite alternate;
+            border-color: #ffdf00 !important;
+        }
         .border-mega-secret-win { border-color: #ffdf00 !important; border-width: 4px !important; animation: mega-secret-glow 1.5s infinite alternate; box-shadow: 0 0 40px rgba(255, 165, 0, 0.8); }
         .reel-viewport { height: 100px; padding-top: 5px; overflow-x: hidden; }
-        .case-reel { display:flex; gap: 8px; transition: transform 5s cubic-bezier(0.2, 0.7, 0.4, 1); }
+        .case-reel { display:flex; gap: 8px; }
         .item-tile { width: 90px; height: 90px; padding: 2px; background-color: #1f2937; border-radius: 8px; box-shadow: inset 0 0 8px rgba(0,0,0,0.7); overflow: hidden; }
         .reel-indicator { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 6px; height: 100%; background-color: #f59e0b; box-shadow: 0 0 15px #f59e0b; z-index: 20; border-radius: 3px; }
         .preview-grid-item { border-left: 6px solid; }
@@ -718,7 +862,6 @@
         .modal-secret-glow { border: 2px solid #fff; animation: rainbow-glow 3s infinite alternate; }
         @keyframes mega-secret-modal-glow { 0%, 100% { box-shadow: 0 0 30px #ffdf00, inset 0 0 15px #ffdf0044; border-color: #ffdf00; } 50% { box-shadow: 0 0 40px #ffA500, inset 0 0 20px #ffA50055; border-color: #ffA500; } }
         .modal-mega-secret-glow { border: 2px solid; animation: mega-secret-modal-glow 2s infinite alternate; }
-
     </style>
 </head>
 <body class="bg-gray-900 min-h-screen">
@@ -728,7 +871,7 @@
         <div class="text-white text-xl font-black tracking-wider">Pet Farm</div>
         <div class="flex flex-col items-end">
             <p id="paws-display" class="text-lg font-extrabold text-orange-400">Лапки: 0.00</p>
-            <p id="user-id-display" class="text-xs text-gray-400 mt-0">Локальное хранилище</p>
+            <p id="user-id-display" class="text-xs text-gray-400 mt-0">Подключение...</p>
         </div>
     </header>
 
@@ -826,9 +969,15 @@
     <!-- Modals -->
     <div id="notification-modal" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 p-3 bg-gray-700 text-white rounded-lg shadow-2xl z-[500]" style="display: none;"><p id="notification-text" class="text-sm font-semibold"></p></div>
     <div id="win-notification-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[600]" style="display: none;"><div class="bg-gray-800 p-8 rounded-2xl text-center shadow-[0_0_50px_rgba(255,255,255,0.1)] w-full max-w-sm"><p class="text-3xl font-extrabold text-white mb-4">Новый Питомец!</p><div id="win-icon-container" class="w-24 h-24 mb-4 flex items-center justify-center rounded-xl bg-gray-900 border-4 mx-auto overflow-hidden"></div><h3 id="win-name" class="text-xl font-extrabold mb-1"></h3><p id="win-rarity" class="text-md mb-6"></p><button id="add-to-inventory-button" class="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl">Продолжить</button></div></div>
-    <div id="updates-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[700]" style="display: none;"><div class="bg-gray-900 p-8 rounded-2xl text-center shadow-2xl w-full max-w-md border-t-4 border-blue-500"><h2 class="text-3xl font-extrabold text-blue-400 mb-4 flex flex-wrap items-center justify-center"><i class="fas fa-bolt mr-3"></i> Нововведения <span id="updates-title-version" class="break-words ml-1"></span></h2><p class="text-lg text-gray-300 mb-6">Привет! Мы обновили игру.</p><div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-left overflow-y-auto max-h-48"><ul class="list-disc list-inside space-y-2 text-gray-300"><li class="font-bold text-yellow-300" id="updates-list-version"></li><li><span class="text-red-400 font-semibold">БЕЗОПАСНОСТЬ:</span> Улучшено подтверждение сброса прогресса.</li><li><span class="text-green-400 font-semibold">НОВАЯ ФУНКЦИЯ:</span> Просмотр питомцев с особыми эффектами для редких!</li><li><span class="text-blue-400 font-semibold">УЛУЧШЕНИЕ:</span> Адаптивный дизайн для окна улучшений.</li></ul></div><button onclick="window.closeUpdatesScreen()" class="w-full py-3 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl mt-6">Начать играть!</button></div></div>
+    <div id="updates-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[700]" style="display: none;"><div class="bg-gray-900 p-8 rounded-2xl text-center shadow-2xl w-full max-w-md border-t-4 border-blue-500"><h2 class="text-3xl font-extrabold text-blue-400 mb-4 flex flex-wrap items-center justify-center"><i class="fas fa-bolt mr-3"></i> Нововведения <span id="updates-title-version" class="break-words ml-1"></span></h2><p class="text-lg text-gray-300 mb-6">Привет! Мы обновили игру.</p><div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-left overflow-y-auto max-h-48">
+        <ul class="list-disc list-inside space-y-2 text-gray-300">
+            <li class="font-bold text-yellow-300" id="updates-list-version"></li>
+            <li><span class="text-green-400 font-semibold">НОВЫЙ ЗВУК:</span> Добавлен звуковой эффект прокрутки кейса!</li>
+            <li><span class="text-purple-400 font-semibold">ИСПРАВЛЕНИЕ:</span> Кейсы больше не начинают крутиться сами по себе при открытии.</li>
+        </ul>
+    </div><button onclick="window.closeUpdatesScreen()" class="w-full py-3 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl mt-6">Начать играть!</button></div></div>
     <div id="reset-confirm-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[800] p-4" style="display: none;"><div class="bg-gray-800 p-8 rounded-2xl text-center shadow-2xl w-full max-w-sm border-t-4 border-red-500"><h3 class="text-2xl font-extrabold text-red-400 mb-4">Подтверждение Сброса</h3><p class="text-md text-gray-300 mb-4">Это действие **нельзя отменить**. Чтобы подтвердить, введите <code class="bg-gray-900 text-red-400 font-mono p-1 rounded">удалить данные</code> в поле ниже.</p><input id="reset-confirm-input" type="text" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-center text-white mb-4 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="удалить данные"><div class="flex space-x-4"><button onclick="window.closeResetConfirmation()" class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Отмена</button><button id="reset-confirm-button" onclick="window.performReset()" class="flex-1 py-3 bg-red-800 text-gray-500 font-bold rounded-xl cursor-not-allowed" disabled>Сбросить</button></div></div></div>
-    <div id="sell-confirm-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[800]" style="display: none;"><div class="bg-gray-800 p-8 rounded-2xl text-center shadow-2xl w-full max-w-sm border-t-4 border-yellow-500"><h3 class="text-2xl font-extrabold text-white mb-4">Подтверждение Продажи</h3><p class="text-md text-gray-300 mb-6">Продать **<span id="sell-pet-name" class="text-yellow-400 font-bold"></span>** за <span id="sell-pet-price" class="text-green-400 font-bold">0.00</span> Лапок?</p><div class="flex space-x-4"><button onclick="document.getElementById('sell-confirm-modal').style.display='none'; window.playNavClickSound();" class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Отмена</button><button id="sell-confirm-button" onclick="window.performSell()" class="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl">Продать</button></div></div></div>
+    <div id="sell-confirm-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[1100]" style="display: none;"><div class="bg-gray-800 p-8 rounded-2xl text-center shadow-2xl w-full max-w-sm border-t-4 border-yellow-500"><h3 class="text-2xl font-extrabold text-white mb-4">Подтверждение Продажи</h3><p class="text-md text-gray-300 mb-6">Продать **<span id="sell-pet-name" class="text-yellow-400 font-bold"></span>** за <span id="sell-pet-price" class="text-green-400 font-bold">0.00</span> Лапок?</p><div class="flex space-x-4"><button onclick="document.getElementById('sell-confirm-modal').style.display='none'; window.playNavClickSound();" class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Отмена</button><button id="sell-confirm-button" onclick="window.performSell()" class="flex-1 py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl">Продать</button></div></div></div>
     <div id="upgrades-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[800] p-4" style="display: none;"><div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-lg border-t-4 border-yellow-500 mx-auto max-h-[90vh] flex flex-col"><div class="flex justify-between items-center mb-4"><h3 class="text-2xl font-extrabold text-white">Улучшения</h3><button onclick="window.closeUpgradesModal()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-2xl"></i></button></div><p class="text-md text-gray-400 mb-6 border-b border-gray-700 pb-3">Покупайте улучшения, чтобы стать сильнее!</p><div id="upgrades-list-container" class="space-y-4 overflow-y-auto pr-2"></div></div></div>
     <div id="collection-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[900] p-4" style="display: none;"><div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-4xl border-t-4 border-purple-500 mx-auto max-h-[90vh] flex flex-col"><div class="flex justify-between items-center mb-4 flex-shrink-0"><div><h3 class="text-2xl font-extrabold text-white">Коллекция Питомцев</h3><p id="collection-counter" class="text-sm text-gray-400">Найдено: 0 / 0</p></div><button onclick="window.closeCollectionModal()" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times text-2xl"></i></button></div><div id="collection-grid" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 overflow-y-auto p-2 bg-gray-900 rounded-lg flex-grow"></div><div class="mt-4 flex-shrink-0"><button id="collection-reward-button" onclick="window.claimCollectionReward()" class="w-full py-3 font-bold rounded-xl transition-all shadow-lg text-lg" disabled>Забрать 22 222 Лапок</button></div></div></div>
     
@@ -847,4 +996,3 @@
 
 </body>
 </html>
-
