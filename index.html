@@ -825,7 +825,7 @@
             if (needsSave) savePaws(window.gameState.paws);
         }
         
-        // --- НОВАЯ ФУНКЦИЯ: Миграция старых данных ---
+        // --- ИСПРАВЛЕННАЯ ФУНКЦИЯ: Миграция старых данных ---
         function runMigration() {
             // 1. Проверяем, существует ли уже новый формат данных. Если да, миграция не нужна.
             if (localStorage.getItem('petFarm_upgrades') !== null) {
@@ -833,43 +833,41 @@
                 return;
             }
 
-            // 2. Проверяем наличие старых данных (без префикса "petFarm_").
-            // Достаточно проверить ключ 'paws', так как он должен был быть всегда.
-            const oldPaws = localStorage.getItem('paws');
+            // 2. Проверяем наличие старых данных (с префиксом "petFarm", без "_").
+            const oldPaws = localStorage.getItem('petFarmPaws');
             if (oldPaws === null) {
                 console.log("Старые данные для миграции не найдены. Начинаем новую игру.");
                 return;
             }
 
-            console.log("Обнаружены старые данные. Запуск процесса миграции...");
+            console.log("Обнаружены старые данные (формат v2.x.x). Запуск процесса миграции...");
             try {
                 // 3. Загружаем все старые данные.
                 const paws = parseFloat(oldPaws) || 0.00;
-                const inventory = JSON.parse(localStorage.getItem('inventory')) || [];
-                const selectedPets = JSON.parse(localStorage.getItem('selectedPets')) || [];
-                const upgrades = JSON.parse(localStorage.getItem('upgrades')) || { equippedPetsLevel: 0 };
-                const foundPets = JSON.parse(localStorage.getItem('foundPets')) || [];
-                const isCollectionRewardClaimed = JSON.parse(localStorage.getItem('isCollectionRewardClaimed')) || false;
+                const inventory = JSON.parse(localStorage.getItem('petFarmInventory')) || [];
+                const selectedPets = JSON.parse(localStorage.getItem('petFarmSelectedPets')) || [];
+                const upgrades = JSON.parse(localStorage.getItem('petFarmUpgrades')) || { equippedPetsLevel: 0 };
+                const foundPets = JSON.parse(localStorage.getItem('petFarmFoundPets')) || [];
+                const isCollectionRewardClaimed = JSON.parse(localStorage.getItem('petFarmCollectionRewardClaimed')) || false;
 
                 // 4. Заполняем глобальный объект gameState старыми данными.
                 window.gameState.paws = paws;
                 window.gameState.inventory = inventory;
                 window.gameState.selectedPets = selectedPets;
-                // Для вложенных объектов лучше использовать Object.assign для сохранения новых полей
                 Object.assign(window.gameState.upgrades, upgrades);
                 window.gameState.foundPets = foundPets;
                 window.gameState.isCollectionRewardClaimed = isCollectionRewardClaimed;
 
-                // 5. Сохраняем gameState в НОВОМ формате с префиксами.
+                // 5. Сохраняем gameState в НОВОМ формате с префиксами "petFarm_".
                 savePaws(window.gameState.paws);
 
                 // 6. Удаляем старые ключи, чтобы миграция не запускалась повторно.
-                localStorage.removeItem('paws');
-                localStorage.removeItem('inventory');
-                localStorage.removeItem('selectedPets');
-                localStorage.removeItem('upgrades');
-                localStorage.removeItem('foundPets');
-                localStorage.removeItem('isCollectionRewardClaimed');
+                localStorage.removeItem('petFarmPaws');
+                localStorage.removeItem('petFarmInventory');
+                localStorage.removeItem('petFarmSelectedPets');
+                localStorage.removeItem('petFarmUpgrades');
+                localStorage.removeItem('petFarmFoundPets');
+                localStorage.removeItem('petFarmCollectionRewardClaimed');
 
                 showToast("✅ Прогресс из старой версии успешно перенесен!");
                 console.log("Миграция завершена успешно.");
@@ -1144,3 +1142,4 @@
 </script>
 </body>
 </html>
+
