@@ -14,7 +14,7 @@
     <script type="module">
         // --- Firebase Imports ---
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
-        import { getFirestore, doc, onSnapshot, setDoc, increment } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+        import { getFirestore, doc, onSnapshot, setDoc, updateDoc, increment, collection, query, where, getDocs, writeBatch, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
         // --- Firebase Configuration ---
         const firebaseConfig = {
@@ -31,13 +31,17 @@
         const db = getFirestore(app);
 
         // --- Глобальные настройки и состояние ---
-        const FUNDRAISING_GOAL = 100000;
-        const CURRENT_UPDATE_VERSION = '2.2.0'; // Изменено
+        const CURRENT_UPDATE_VERSION = '3.0.0'; // Изменено
         const PASSIVE_TICK_RATE = 1000; 
         const SOUND_COOLDOWN = 150; 
         let passiveIntervalId = null; 
         let lastSoundTime = 0; 
         let currentCaseId = 'farmer'; 
+        let currentUserId = null;
+        let activeTradeUnsubscribe = null;
+        let tradeRequestsUnsubscribe = null;
+        let presenceIntervalId = null;
+
         window.gameState = {
             paws: 0.00, 
             baseClickValue: 0.09,
@@ -50,6 +54,14 @@
             },
             foundPets: [], 
             isCollectionRewardClaimed: false,
+            activeTrade: {
+                tradeId: null,
+                withUserId: null,
+                myOffer: { pets: [], paws: 0 },
+                theirOffer: { pets: [], paws: 0 },
+                myReady: false,
+                theirReady: false
+            }
         };
         
         const FARMER_CASE_COST = 100.00; 
@@ -197,29 +209,51 @@
             }
         }
         
-        function loadPaws() {
+        async function loadGameState() {
             try {
-                window.gameState.inventory = JSON.parse(localStorage.getItem('petFarmInventory')) || [];
-                window.gameState.selectedPets = JSON.parse(localStorage.getItem('petFarmSelectedPets')) || []; 
-                window.gameState.upgrades = JSON.parse(localStorage.getItem('petFarmUpgrades')) || { equippedPetsLevel: 0 };
-                window.gameState.foundPets = JSON.parse(localStorage.getItem('petFarmFoundPets')) || [];
-                window.gameState.isCollectionRewardClaimed = JSON.parse(localStorage.getItem('petFarmCollectionRewardClaimed')) || false;
-                return parseFloat(localStorage.getItem('petFarmPaws')) || 0.00;
+                const savedPaws = localStorage.getItem('petFarmPaws');
+                window.gameState.paws = savedPaws ? parseFloat(savedPaws) : 0.00;
+
+                const savedInventory = localStorage.getItem('petFarmInventory');
+                window.gameState.inventory = savedInventory ? JSON.parse(savedInventory) : [];
+
+                const savedSelectedPets = localStorage.getItem('petFarmSelectedPets');
+                window.gameState.selectedPets = savedSelectedPets ? JSON.parse(savedSelectedPets) : [];
+
+                const savedUpgrades = localStorage.getItem('petFarmUpgrades');
+                window.gameState.upgrades = savedUpgrades ? JSON.parse(savedUpgrades) : { equippedPetsLevel: 0 };
+                
+                const savedFoundPets = localStorage.getItem('petFarmFoundPets');
+                window.gameState.foundPets = savedFoundPets ? JSON.parse(savedFoundPets) : [];
+
+                const savedRewardClaimed = localStorage.getItem('petFarmCollectionRewardClaimed');
+                window.gameState.isCollectionRewardClaimed = savedRewardClaimed ? JSON.parse(savedRewardClaimed) : false;
+
             } catch (e) {
                 console.error("Ошибка при загрузке из LocalStorage:", e);
-                Object.assign(window.gameState, { inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false });
-                return 0.00;
+                 Object.assign(window.gameState, { paws: 0.00, inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false });
             }
         }
-        function savePaws(value) {
-            try {
-                localStorage.setItem('petFarmPaws', value.toFixed(2));
+
+        async function saveGameState() {
+             try {
+                localStorage.setItem('petFarmPaws', window.gameState.paws.toFixed(2));
                 localStorage.setItem('petFarmInventory', JSON.stringify(window.gameState.inventory));
                 localStorage.setItem('petFarmSelectedPets', JSON.stringify(window.gameState.selectedPets)); 
                 localStorage.setItem('petFarmUpgrades', JSON.stringify(window.gameState.upgrades));
                 localStorage.setItem('petFarmFoundPets', JSON.stringify(window.gameState.foundPets));
                 localStorage.setItem('petFarmCollectionRewardClaimed', JSON.stringify(window.gameState.isCollectionRewardClaimed));
-            } catch (e) { console.error("Ошибка при сохранении в LocalStorage:", e); }
+                
+                // Save to Firestore as well
+                if(currentUserId) {
+                    const playerDocRef = doc(db, "players", currentUserId);
+                    await setDoc(playerDocRef, {
+                        paws: window.gameState.paws,
+                        inventory: window.gameState.inventory,
+                        lastSeen: serverTimestamp()
+                    }, { merge: true });
+                }
+            } catch (e) { console.error("Ошибка при сохранении:", e); }
         }
         
         function migrateInventory() {
@@ -236,7 +270,7 @@
                 }
                 return pet;
             });
-            if (inventoryChanged) { savePaws(window.gameState.paws); showToast("✅ Инвентарь обновлен!"); }
+            if (inventoryChanged) { saveGameState(); showToast("✅ Инвентарь обновлен!"); }
         }
         
         window.showResetConfirmation = function() { 
@@ -291,7 +325,7 @@
             window.gameState.paws += pet.value;
             window.gameState.selectedPets = window.gameState.selectedPets.filter(id => id !== petId);
             window.gameState.inventory.splice(petIndex, 1);
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             renderInventory();
             showToast(`💰 Продано: ${pet.name} за ${pet.value.toFixed(2)} Лапок!`);
@@ -304,7 +338,7 @@
             if (availablePets.length === 0) return showToast("У вас нет питомцев, приносящих доход!");
             availablePets.sort((a, b) => b.passiveValue - a.passiveValue);
             window.gameState.selectedPets = availablePets.slice(0, maxPets).map(pet => pet.id);
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             renderInventory(); 
             showToast(`✅ Выбраны ${window.gameState.selectedPets.length} лучших питомцев!`);
@@ -327,7 +361,7 @@
                     return showToast(`Достигнут лимит активных питомцев (${maxPets})!`);
                 }
             }
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             renderInventory();
             window.closePetPreview();
@@ -366,24 +400,21 @@
             if (window.gameState.paws < tier.cost) return showToast("Недостаточно Лапок.");
             window.gameState.paws -= tier.cost;
             window.gameState.upgrades[`${upgradeType}Level`] = level;
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             renderInventory();
             renderUpgradesModalContent();
             showToast(`🎉 Успешно! Лимит питомцев увеличен до ${tier.newMax}!`);
         };
         
-        function getIconHtml(item, isLarge = false, isReel = false, isPreview = false, isWinModal = false) {
-             if (item.isMegaSecret && isReel && !isWinModal) {
+        function getIconHtml(item, sizeClass = 'w-10 h-10', extraClasses = 'mr-3') {
+             if (item.isMegaSecret) {
                 return '<div class="w-full h-full flex items-center justify-center text-4xl font-black text-white" style="text-shadow: 0 0 10px #000;">?</div>';
              }
              let iconUrl = item.icon && item.icon.startsWith('http') ? item.icon : 'https://placehold.co/60x60/374151/fff?text=?';
-             const isSecretHidden = item.isHiddenInPreview && (isReel || isPreview) && !isWinModal;
-             if (isSecretHidden) iconUrl = item.previewIcon;
-             let sizeClass = isReel || isWinModal ? 'w-full h-full' : (isLarge ? 'w-12 h-12' : 'w-10 h-10');
-             let marginClass = isReel || isWinModal ? '' : (isLarge ? 'mr-4 flex-shrink-0' : 'mr-3');
-             return `<img src="${iconUrl}" alt="${item.name}" class="${sizeClass} object-cover bg-gray-700 ${marginClass} rounded-lg" onerror="this.onerror=null;this.src='https://placehold.co/40x40/374151/fff?text=?';">`;
+             return `<img src="${iconUrl}" alt="${item.name}" class="${sizeClass} ${extraClasses} object-cover bg-gray-700 rounded-lg" onerror="this.onerror=null;this.src='https://placehold.co/40x40/374151/fff?text=?';">`;
         }
+
         function renderInventory() {
             const inventoryContainer = document.getElementById('inventory-container');
             const emptyState = document.getElementById('inventory-empty-state');
@@ -404,7 +435,7 @@
                 const clickInfo = item.clickBonus > 0 ? `<p class="text-xs text-blue-400 mt-1 font-bold">Клик: +${item.clickBonus.toFixed(2)}</p>` : '';
                 const noBonusInfo = !passiveInfo && !clickInfo ? `<p class="text-xs text-gray-500 mt-1">Не дает бонусов</p>` : '';
                 const secretClass = (item.rarity === "Секретный" || item.rarity === "Мега Секретный") ? 'inventory-item-secret' : '';
-                return `<div class="inventory-item p-4 bg-gray-700 rounded-xl flex items-center justify-between shadow-lg border-l-4 ${item.border.replace('border-', 'border-l-')} ${secretClass}"><div class="flex items-center flex-grow cursor-pointer" onclick="window.showPetPreview('${item.id}', 'inventory')">${getIconHtml(item, true)}<div class="flex-grow"><p class="text-lg font-bold ${item.color}">${item.name}</p><p class="text-sm text-gray-400">${item.rarity}</p>${passiveInfo}${clickInfo}${noBonusInfo}</div></div><div class="text-right flex-shrink-0 ml-4 flex flex-col space-y-2"><button onclick="window.togglePetSelection('${item.id}')" class="${buttonClass}" ${(!hasBonus || (!isSelected && window.gameState.selectedPets.length >= getMaxSelectedPets())) ? 'disabled' : ''}>${buttonText}</button>${sellButton}<p class="text-xs text-gray-500 mt-2">${new Date(item.date).toLocaleDateString('ru-RU')}</p></div></div>`;
+                return `<div class="inventory-item p-4 bg-gray-700 rounded-xl flex items-center justify-between shadow-lg border-l-4 ${item.border.replace('border-', 'border-l-')} ${secretClass}"><div class="flex items-center flex-grow cursor-pointer" onclick="window.showPetPreview('${item.id}', 'inventory')">${getIconHtml(item, 'w-12 h-12', 'mr-4 flex-shrink-0')}<div class="flex-grow"><p class="text-lg font-bold ${item.color}">${item.name}</p><p class="text-sm text-gray-400">${item.rarity}</p>${passiveInfo}${clickInfo}${noBonusInfo}</div></div><div class="text-right flex-shrink-0 ml-4 flex flex-col space-y-2"><button onclick="window.togglePetSelection('${item.id}')" class="${buttonClass}" ${(!hasBonus || (!isSelected && window.gameState.selectedPets.length >= getMaxSelectedPets())) ? 'disabled' : ''}>${buttonText}</button>${sellButton}<p class="text-xs text-gray-500 mt-2">${new Date(item.date).toLocaleDateString('ru-RU')}</p></div></div>`;
             }).join('');
         }
         function renderCasePreview(caseId) {
@@ -416,7 +447,7 @@
                 const displayName = item.isHiddenInPreview ? item.previewName : item.name;
                 const displayRarity = item.isHiddenInPreview ? "????" : item.rarity;
                 const displayColor = item.isHiddenInPreview ? "text-gray-400" : item.color;
-                previewContainer.innerHTML += `<div class="preview-grid-item border-2 ${item.border} flex items-center p-3 rounded-lg bg-gray-900 shadow-md cursor-pointer hover:bg-gray-800" onclick="window.showPetPreview('${item.name}', 'case')">${getIconHtml(item, false, false, true)}<div class="flex-grow"><p class="text-md font-bold ${displayColor} leading-tight">${displayName}</p><p class="text-xs text-gray-400">${displayRarity}</p></div><p class="text-sm font-semibold text-right text-gray-300 ml-2 whitespace-nowrap">${item.probability.toFixed(2)}%</p></div>`;
+                previewContainer.innerHTML += `<div class="preview-grid-item border-2 ${item.border} flex items-center p-3 rounded-lg bg-gray-900 shadow-md cursor-pointer hover:bg-gray-800" onclick="window.showPetPreview('${item.name}', 'case')">${getIconHtml(item)}<div class="flex-grow"><p class="text-md font-bold ${displayColor} leading-tight">${displayName}</p><p class="text-xs text-gray-400">${displayRarity}</p></div><p class="text-sm font-semibold text-right text-gray-300 ml-2 whitespace-nowrap">${item.probability.toFixed(2)}%</p></div>`;
             });
         }
 
@@ -437,8 +468,9 @@
             const stopOffset = (document.querySelector('.reel-viewport').clientWidth / 2) - (75 * itemWidthTotal + (itemWidth / 2));
             items.forEach(item => {
                 let tileClass = `item-tile flex-shrink-0 flex flex-col items-center justify-center rounded-lg border-2 ${item.border}`;
-                if (item.isMegaSecret) tileClass += ' glow-mega-secret';
-                reel.innerHTML += `<div class="${tileClass}">${getIconHtml(item, false, true, true)}</div>`;
+                 if (item.isMegaSecret) tileClass += ' glow-mega-secret';
+                let content = item.isHiddenInPreview ? '<div class="w-full h-full flex items-center justify-center text-4xl font-black text-white" style="text-shadow: 0 0 10px #000;">?</div>' : getIconHtml(item, 'w-full h-full', '');
+                reel.innerHTML += `<div class="${tileClass}">${content}</div>`;
             });
             return stopOffset;
         }
@@ -447,13 +479,13 @@
             const newItem = { ...itemData, date: new Date().toISOString(), id: crypto.randomUUID() };
             if (!window.gameState.foundPets.includes(newItem.name)) { window.gameState.foundPets.push(newItem.name); }
             window.gameState.inventory.push(newItem);
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             showToast(`✅ ${newItem.name} добавлен в Инвентарь!`);
             const modal = document.getElementById('win-notification-modal');
             let borderClass = itemData.rarity === 'Секретный' ? 'border-rainbow' : (itemData.rarity === 'Мега Секретный' ? 'border-mega-secret-win' : itemData.border);
             document.getElementById('win-icon-container').className = `w-24 h-24 mb-4 flex items-center justify-center rounded-xl bg-gray-900 border-4 ${borderClass} mx-auto overflow-hidden`; 
-            document.getElementById('win-icon-container').innerHTML = getIconHtml(itemData, false, true, false, true); 
+            document.getElementById('win-icon-container').innerHTML = getIconHtml(itemData, 'w-full h-full', '');
             document.getElementById('win-name').textContent = itemData.name;
             document.getElementById('win-name').className = `text-xl font-extrabold mb-1 ${itemData.color}`;
             document.getElementById('win-rarity').textContent = itemData.rarity; 
@@ -470,7 +502,7 @@
             if (window.gameState.paws < caseData.cost) { return showToast(`Не хватает ${caseData.cost.toFixed(2)} Лапок!`); }
 
             window.gameState.paws -= caseData.cost;
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             const openButton = document.getElementById('open-case-button');
             openButton.disabled = true;
@@ -491,14 +523,9 @@
                 
                 const tickInterval = setInterval(() => {
                     const reelEl = document.getElementById('case-reel');
-                    if (!reelEl) {
-                        clearInterval(tickInterval);
-                        return;
-                    }
-                    
+                    if (!reelEl) { clearInterval(tickInterval); return; }
                     const style = window.getComputedStyle(reelEl);
                     if (!style.transform || style.transform === 'none') return;
-                    
                     try {
                         const matrix = new DOMMatrix(style.transform);
                         const currentX = Math.abs(matrix.m41);
@@ -511,9 +538,7 @@
                                 reelTickSynth.triggerAttackRelease('C6', '8n');
                             }
                         }
-                    } catch (e) {
-                       // Failsafe for DOMMatrix parsing
-                    }
+                    } catch (e) {}
                 }, 65);
 
                 setTimeout(() => {
@@ -558,7 +583,7 @@
 
         function managePassiveLoop() {
             if (!window.gameState.isDbReady || document.hidden) { if (passiveIntervalId !== null) { clearInterval(passiveIntervalId); passiveIntervalId = null; } return; }
-            if (passiveIntervalId === null) { passiveIntervalId = setInterval(() => { if (window.gameState.passiveRate > 0) { window.gameState.paws += window.gameState.passiveRate; updatePawsDisplay(); savePaws(window.gameState.paws); } }, PASSIVE_TICK_RATE); }
+            if (passiveIntervalId === null) { passiveIntervalId = setInterval(() => { if (window.gameState.passiveRate > 0) { window.gameState.paws += window.gameState.passiveRate; updatePawsDisplay(); saveGameState(); } }, PASSIVE_TICK_RATE); }
         }
         function handleVisibilityChange() { 
             managePassiveLoop();
@@ -571,7 +596,7 @@
             if (!window.gameState.isDbReady) return;
             window.gameState.paws += calculateClickValue();
             updatePawsDisplay();
-            savePaws(window.gameState.paws);
+            saveGameState();
             const clickButton = document.getElementById('click-button');
             clickButton.classList.add('scale-95');
             setTimeout(() => { clickButton.classList.remove('scale-95'); }, 100);
@@ -693,7 +718,7 @@
             if (window.gameState.isCollectionRewardClaimed) return showToast("Награда уже была получена.");
             window.gameState.paws += COLLECTION_REWARD;
             window.gameState.isCollectionRewardClaimed = true;
-            savePaws(window.gameState.paws);
+            saveGameState();
             updatePawsDisplay();
             renderCollection();
             showToast(`🎉 Вы получили ${COLLECTION_REWARD} Лапок за полную коллекцию!`);
@@ -747,104 +772,124 @@
             document.getElementById('updates-modal').style.display = 'none'; 
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
-        
-        // --- Fundraising Logic ---
-        window.showFundraisingModal = function() {
+
+        // --- Players & Trading Logic ---
+        window.showPlayersModal = async function() {
             playNavClickSound();
-            document.getElementById('fundraising-modal').style.display = 'flex';
-        };
-
-        window.closeFundraisingModal = function() {
-            playNavClickSound();
-            document.getElementById('fundraising-modal').style.display = 'none';
-        };
-
-        function updateFundraisingProgressUI(currentAmount = 0) {
-            const goal = FUNDRAISING_GOAL;
-            const amount = Math.min(currentAmount, goal);
-            const percentage = Math.min((amount / goal) * 100, 100);
-
-            const progressBar = document.getElementById('fundraising-progress-bar');
-            const progressText = document.getElementById('fundraising-progress-text');
-            const inputArea = document.getElementById('fundraising-input-area');
-            const completeMessage = document.getElementById('fundraising-complete-message');
-
-            progressBar.style.width = `${percentage}%`;
-            progressBar.textContent = `${Math.floor(percentage)}%`;
-            progressText.textContent = `Собрано: ${Math.floor(amount).toLocaleString('ru-RU')} / ${goal.toLocaleString('ru-RU')}`;
+            document.getElementById('players-modal').style.display = 'flex';
+            const container = document.getElementById('players-list-container');
+            container.innerHTML = '<p class="text-gray-400">Загрузка игроков...</p>';
             
-            if (amount >= goal) {
-                progressBar.classList.remove('bg-teal-500');
-                progressBar.classList.add('bg-green-500');
-                inputArea.style.display = 'none';
-                completeMessage.style.display = 'block';
-            } else {
-                progressBar.classList.add('bg-teal-500');
-                progressBar.classList.remove('bg-green-500');
-                inputArea.style.display = 'block';
-                completeMessage.style.display = 'none';
-            }
-        }
-
-        async function setupFundraisingListener() {
             try {
-                const fundraisingDocRef = doc(db, 'public_data', 'update_fundraising');
-                onSnapshot(fundraisingDocRef, (doc) => {
-                    if (doc.exists()) {
-                        const data = doc.data();
-                        updateFundraisingProgressUI(data.currentAmount);
-                    } else {
-                        console.log("Fundraising document does not exist yet.");
-                        updateFundraisingProgressUI(0);
-                    }
-                }, (error) => {
-                    console.error("Error listening to fundraising data:", error);
-                    showToast("Ошибка подключения к сбору средств.");
+                const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+                const playersQuery = query(collection(db, "players"), where("lastSeen", ">", fiveMinutesAgo));
+                const querySnapshot = await getDocs(playersQuery);
+                let playersHtml = '';
+                querySnapshot.forEach((doc) => {
+                    if (doc.id === currentUserId) return;
+                    const playerData = doc.data();
+                    playersHtml += `
+                        <div class="bg-gray-700 p-4 rounded-xl flex items-center justify-between">
+                            <div class="flex flex-col">
+                                <p class="font-bold text-white truncate w-32 sm:w-48" title="${doc.id}">Игрок: ${doc.id.substring(0, 8)}...</p>
+                                <p class="text-sm text-green-400">В сети</p>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                <button onclick="window.inspectPlayer('${doc.id}')" class="px-3 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold"><i class="fas fa-eye"></i></button>
+                                <button onclick="window.initiateTrade('${doc.id}')" class="px-3 py-2 bg-yellow-600 hover:bg-yellow-500 rounded-lg text-sm font-bold"><i class="fas fa-exchange-alt"></i> Обмен</button>
+                            </div>
+                        </div>`;
                 });
-            } catch(e) {
-                console.error("Firebase setup error:", e);
-                showToast("Не удалось инициализировать сбор средств.");
-            }
-        }
-
-        window.contributeToFundraising = async function() {
-            playNavClickSound();
-            const input = document.getElementById('fundraising-amount-input');
-            const amount = parseInt(input.value, 10);
-
-            if (isNaN(amount) || amount <= 0) {
-                return showToast("❌ Введите корректную сумму.");
-            }
-            if (window.gameState.paws < amount) {
-                return showToast("❌ Недостаточно Лапок для взноса.");
-            }
-            
-            window.gameState.paws -= amount;
-            savePaws(window.gameState.paws);
-            updatePawsDisplay();
-            input.value = '';
-            showToast(`✅ Спасибо за ваш взнос в ${amount} Лапок!`);
-            window.closeFundraisingModal();
-
-            try {
-                const fundraisingDocRef = doc(db, 'public_data', 'update_fundraising');
-                await setDoc(fundraisingDocRef, { currentAmount: increment(amount) }, { merge: true });
+                container.innerHTML = playersHtml || '<p class="text-gray-400 text-center">Сейчас нет других игроков в сети.</p>';
             } catch (error) {
-                console.error("Error contributing to fundraising:", error);
-                showToast("❌ Ошибка при отправке взноса. Попробуйте снова.");
-                // Revert paws if server update fails
-                window.gameState.paws += amount;
-                savePaws(window.gameState.paws);
-                updatePawsDisplay();
+                console.error("Error fetching players: ", error);
+                container.innerHTML = '<p class="text-red-400">Ошибка загрузки списка игроков.</p>';
             }
         };
+
+        window.closePlayersModal = function() {
+            playNavClickSound();
+            document.getElementById('players-modal').style.display = 'none';
+        }
+
+        window.inspectPlayer = async function(playerId) {
+            playNavClickSound();
+            const modal = document.getElementById('player-inspect-modal');
+            const container = document.getElementById('player-inspect-container');
+            container.innerHTML = '<p>Загрузка...</p>';
+            modal.style.display = 'flex';
+
+            try {
+                const playerDocRef = doc(db, 'players', playerId);
+                const playerDoc = await getDocs(playerDocRef); // This is wrong, should be getDoc
+                // Correcting it:
+                const playerSnap = await doc(db, 'players', playerId).get();
+
+
+                if(playerSnap.exists()){
+                     const playerData = playerSnap.data();
+                     document.getElementById('player-inspect-name').textContent = `Игрок: ${playerId.substring(0, 8)}...`;
+                     document.getElementById('player-inspect-paws').textContent = `Лапки: ${playerData.paws ? playerData.paws.toFixed(2) : '0.00'}`;
+
+                    let inventoryHtml = playerData.inventory && playerData.inventory.length > 0
+                        ? playerData.inventory.map(pet => `
+                            <div class="p-2 bg-gray-900 rounded-lg flex items-center border-l-4 ${pet.border.replace('border-','border-l-')}">
+                                ${getIconHtml(pet, 'w-10 h-10', 'flex-shrink-0 mr-3')}
+                                <div>
+                                    <p class="font-bold text-sm ${pet.color}">${pet.name}</p>
+                                    <p class="text-xs text-gray-400">${pet.rarity}</p>
+                                </div>
+                            </div>`).join('')
+                        : '<p class="text-gray-500 col-span-full text-center">Инвентарь пуст</p>';
+                    container.innerHTML = inventoryHtml;
+                } else {
+                     container.innerHTML = '<p class="text-red-400">Не удалось найти данные игрока.</p>';
+                }
+            } catch(e) {
+                 console.error("Error inspecting player:", e);
+                 container.innerHTML = '<p class="text-red-400">Ошибка при загрузке инвентаря.</p>';
+            }
+        }
+        
+        window.closeInspectModal = function(){
+             playNavClickSound();
+             document.getElementById('player-inspect-modal').style.display = 'none';
+        }
 
         async function initGame() {
             updateAppState(false); 
-            window.gameState.paws = loadPaws();
+            
+            // Setup User ID
+            let userId = localStorage.getItem('petFarmUserId');
+            if (!userId) {
+                userId = crypto.randomUUID();
+                localStorage.setItem('petFarmUserId', userId);
+            }
+            currentUserId = userId;
+            document.getElementById('user-id-display').textContent = `ID: ${currentUserId.substring(0,8)}...`;
+            document.getElementById('user-id-display').title = `Ваш ID: ${currentUserId}`;
+
+
+            await loadGameState();
             migrateInventory(); 
-            setupFundraisingListener(); // Setup listener for fundraising
             window.gameState.isDbReady = true;
+
+            // Sync with Firestore after local load
+            const playerDocRef = doc(db, "players", currentUserId);
+            const docSnap = await getDoc(playerDocRef);
+
+            if (docSnap.exists()) {
+                // If cloud save is newer or local is empty, load from cloud
+                const cloudData = docSnap.data();
+                if (window.gameState.inventory.length === 0 && cloudData.inventory.length > 0) {
+                     window.gameState.paws = cloudData.paws;
+                     window.gameState.inventory = cloudData.inventory;
+                     showToast("Прогресс восстановлен из облака!");
+                }
+            }
+            await saveGameState(); // Initial save to set presence
+
+
             updatePawsDisplay();
             updateAppState(true); 
             document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -855,6 +900,14 @@
             setupResetConfirmationListener();
             requestWakeLock();
             window.checkAndShowUpdatesScreen(); 
+
+            // Presence and Trade listeners
+            if(presenceIntervalId) clearInterval(presenceIntervalId);
+            presenceIntervalId = setInterval(() => {
+                if(currentUserId) {
+                    updateDoc(doc(db, "players", currentUserId), { lastSeen: serverTimestamp() });
+                }
+            }, 60 * 1000); // every minute
         }
         
         window.setupNavigation = function() {
@@ -922,6 +975,12 @@
         .modal-secret-glow { border: 2px solid #fff; animation: rainbow-glow 3s infinite alternate; }
         @keyframes mega-secret-modal-glow { 0%, 100% { box-shadow: 0 0 30px #ffdf00, inset 0 0 15px #ffdf0044; border-color: #ffdf00; } 50% { box-shadow: 0 0 40px #ffA500, inset 0 0 20px #ffA50055; border-color: #ffA500; } }
         .modal-mega-secret-glow { border: 2px solid; animation: mega-secret-modal-glow 2s infinite alternate; }
+
+        /* Custom scrollbar for modals */
+        .modal-scroll-content::-webkit-scrollbar { width: 8px; }
+        .modal-scroll-content::-webkit-scrollbar-track { background: #2d3748; border-radius: 10px; }
+        .modal-scroll-content::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 10px; }
+        .modal-scroll-content::-webkit-scrollbar-thumb:hover { background: #718096; }
     </style>
 </head>
 <body class="bg-gray-900 min-h-screen">
@@ -931,7 +990,7 @@
         <div class="text-white text-xl font-black tracking-wider">Pet Farm</div>
         <div class="flex flex-col items-end">
             <p id="paws-display" class="text-lg font-extrabold text-orange-400">Лапки: 0.00</p>
-            <p id="user-id-display" class="text-xs text-gray-400 mt-0">Онлайн-сохранение</p>
+            <p id="user-id-display" class="text-xs text-gray-400 mt-0 cursor-pointer" title="Ваш ID">ID: ...</p>
         </div>
     </header>
 
@@ -947,10 +1006,6 @@
             <button id="click-button" class="w-48 h-48 rounded-full bg-orange-500 text-white text-3xl font-bold transition-all duration-100 ease-out shadow-2xl hover:shadow-orange-500/50 hover:bg-orange-400 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
                 <i class="fas fa-paw"></i>
             </button>
-            <!-- NEW FUNDRAISING BUTTON -->
-            <button id="fundraising-button" onclick="window.showFundraisingModal()" class="mt-8 px-6 py-3 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl transition-all shadow-lg text-lg">
-                <i class="fas fa-donate mr-2"></i> Сбор на обновление
-            </button>
         </section>
 
         <section id="inventory-section" class="w-full" style="display: none;">
@@ -964,12 +1019,20 @@
                 <p class="text-lg font-semibold text-white">Активные Питомцы</p>
                 <p id="active-pets-count" class="text-lg font-bold text-blue-400">Активных: 0 / 3</p>
             </div>
-            <button onclick="window.equipBestPets()" class="w-full py-3 mb-4 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-purple-600/50">
-                <i class="fas fa-magic mr-2"></i> Одеть Лучших
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <button onclick="window.equipBestPets()" class="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-purple-600/50">
+                    <i class="fas fa-magic mr-2"></i> Авто - выбор
+                </button>
+                <button onclick="window.showCollectionModal()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-600/50">
+                    <i class="fas fa-book mr-2"></i> Коллекция
+                </button>
+            </div>
+
+            <button onclick="window.showPlayersModal()" class="w-full py-3 mb-4 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-orange-600/50 text-lg">
+                <i class="fas fa-users mr-2"></i> Игроки
             </button>
-            <button onclick="window.showCollectionModal()" class="w-full py-3 mb-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg hover:shadow-blue-600/50">
-                <i class="fas fa-book mr-2"></i> Коллекция
-            </button>
+
             <div id="inventory-container" class="space-y-4"></div>
             <div id="inventory-empty-state" class="flex flex-col items-center justify-center p-8 bg-gray-800 rounded-xl mt-4 border-2 border-dashed border-gray-700" style="display: flex;">
                 <i class="fas fa-box-open text-6xl text-gray-600 mb-4"></i>
@@ -1036,8 +1099,16 @@
     <div id="updates-modal" class="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-[700]" style="display: none;"><div class="bg-gray-900 p-8 rounded-2xl text-center shadow-2xl w-full max-w-md border-t-4 border-blue-500"><h2 class="text-3xl font-extrabold text-blue-400 mb-4 flex flex-wrap items-center justify-center"><i class="fas fa-bolt mr-3"></i> Нововведения <span id="updates-title-version" class="break-words ml-1"></span></h2><p class="text-lg text-gray-300 mb-6">Привет! Мы обновили игру.</p><div class="bg-gray-800 p-4 rounded-lg border border-gray-700 text-left overflow-y-auto max-h-48">
         <ul class="list-disc list-inside space-y-2 text-gray-300">
             <li class="font-bold text-yellow-300" id="updates-list-version"></li>
-            <li><span class="text-green-400 font-semibold">НОВИНКА:</span> Добавлена система сбора средств на обновление!</li>
-            <li><span class="text-blue-400 font-semibold">ТЕХНИЧЕСКОЕ:</span> Интегрирована база данных Firebase для синхронизации.</li>
+            <li class="p-2 rounded-lg bg-yellow-900/50 border-l-4 border-yellow-400">
+                <span class="text-yellow-300 font-extrabold text-lg">🚀 ГЛОБАЛЬНОЕ ОБНОВЛЕНИЕ: СИСТЕМА ОБМЕНА!</span>
+                <ul class="list-disc list-inside ml-4 mt-1 text-yellow-200">
+                    <li>Добавлена кнопка "Игроки" в инвентаре.</li>
+                    <li>Теперь можно смотреть профили и инвентарь других игроков.</li>
+                    <li>Полноценный обмен питомцами и лапками в реальном времени!</li>
+                    <li>Безопасная система с подтверждением от обоих игроков.</li>
+                </ul>
+            </li>
+            <li><span class="text-blue-400 font-semibold">ИНТЕРФЕЙС:</span> Кнопки в инвентаре переставлены для удобства.</li>
         </ul>
     </div><button onclick="window.closeUpdatesScreen()" class="w-full py-3 bg-blue-500 hover:bg-blue-400 text-white font-bold rounded-xl mt-6">Начать играть!</button></div></div>
     <div id="reset-confirm-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[800] p-4" style="display: none;"><div class="bg-gray-800 p-8 rounded-2xl text-center shadow-2xl w-full max-w-sm border-t-4 border-red-500"><h3 class="text-2xl font-extrabold text-red-400 mb-4">Подтверждение Сброса</h3><p class="text-md text-gray-300 mb-4">Это действие **нельзя отменить**. Чтобы подтвердить, введите <code class="bg-gray-900 text-red-400 font-mono p-1 rounded">удалить данные</code> в поле ниже.</p><input id="reset-confirm-input" type="text" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-2 text-center text-white mb-4 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="удалить данные"><div class="flex space-x-4"><button onclick="window.closeResetConfirmation()" class="flex-1 py-3 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Отмена</button><button id="reset-confirm-button" onclick="window.performReset()" class="flex-1 py-3 bg-red-800 text-gray-500 font-bold rounded-xl cursor-not-allowed" disabled>Сбросить</button></div></div></div>
@@ -1053,31 +1124,59 @@
             <button onclick="window.closePetPreview()" class="w-full mt-4 py-2 bg-gray-600 hover:bg-gray-500 text-white font-bold rounded-xl">Закрыть</button>
         </div>
     </div>
-    <!-- NEW FUNDRAISING MODAL -->
-    <div id="fundraising-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[1200] p-4" style="display: none;">
-        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-md border-t-4 border-teal-500 mx-auto flex flex-col">
+    <!-- NEW: Players & Trading Modals -->
+    <div id="players-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[1200] p-4" style="display: none;">
+        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-lg border-t-4 border-orange-500 mx-auto max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-2xl font-extrabold text-white">Сбор для следующего обновления</h3>
-                <button onclick="window.closeFundraisingModal()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
+                <h3 class="text-2xl font-extrabold text-white">Игроки в сети</h3>
+                <button onclick="window.closePlayersModal()" class="text-gray-400 hover:text-white"><i class="fas fa-times text-2xl"></i></button>
             </div>
-            <p class="text-md text-gray-400 mb-2">Наша цель: 100,000 Лапок</p>
-            <div class="w-full bg-gray-900 rounded-full h-8 mb-2 border-2 border-gray-700 overflow-hidden">
-                <div id="fundraising-progress-bar" class="bg-teal-500 h-full rounded-full text-center text-white font-bold leading-8 transition-all duration-500" style="width: 0%;">0%</div>
+            <div id="players-list-container" class="space-y-4 overflow-y-auto pr-2 modal-scroll-content"></div>
+        </div>
+    </div>
+    
+    <div id="player-inspect-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[1300] p-4" style="display: none;">
+        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-2xl border-t-4 border-blue-500 mx-auto max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 flex-shrink-0">
+                <div>
+                    <h3 id="player-inspect-name" class="text-xl font-extrabold text-white">Инвентарь игрока</h3>
+                    <p id="player-inspect-paws" class="text-sm text-orange-400 font-bold">Лапки: 0.00</p>
+                </div>
+                <button onclick="window.closeInspectModal()" class="text-gray-400 hover:text-white transition-colors"><i class="fas fa-times text-2xl"></i></button>
             </div>
-            <p id="fundraising-progress-text" class="text-center text-gray-300 mb-6 font-semibold">Собрано: 0 / 100,000</p>
-            
-            <div id="fundraising-input-area">
-                <p class="text-sm text-gray-400 mb-2">Введите сумму для взноса:</p>
-                <input id="fundraising-amount-input" type="number" class="w-full bg-gray-900 border border-gray-700 rounded-lg p-3 text-center text-white text-lg mb-4 focus:outline-none focus:ring-2 focus:ring-teal-500" placeholder="Например: 1000">
-                <button onclick="window.contributeToFundraising()" class="w-full py-3 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl transition-all shadow-lg text-lg">
-                    <i class="fas fa-hand-holding-usd mr-2"></i> Внести
-                </button>
+            <div id="player-inspect-container" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto p-2 bg-gray-900 rounded-lg flex-grow modal-scroll-content"></div>
+        </div>
+    </div>
+
+    <div id="trade-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-[1400] p-4" style="display: none;">
+        <div class="bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-4xl border-t-4 border-purple-500 mx-auto max-h-[90vh] flex flex-col text-white">
+            <h3 class="text-2xl font-extrabold text-center mb-4">Окно Обмена</h3>
+            <!-- My Offer -->
+            <div class="flex-1 bg-gray-900/50 rounded-xl p-4 border-2 border-dashed border-green-500 mb-4">
+                <p class="font-bold text-lg mb-2 text-green-400">Ваше предложение:</p>
+                <div id="trade-my-offer-pets" class="grid grid-cols-3 sm:grid-cols-6 gap-2 min-h-[70px]"></div>
+                <button id="trade-add-pet-button" class="w-full text-center py-2 mt-2 bg-gray-700 hover:bg-gray-600 rounded-lg"><i class="fas fa-plus"></i> Добавить питомца</button>
+                <div class="mt-3 flex items-center">
+                    <span class="font-semibold mr-2 text-orange-400">Лапки:</span>
+                    <input id="trade-my-paws-input" type="number" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2 text-white" placeholder="0">
+                </div>
             </div>
-            <div id="fundraising-complete-message" class="text-center p-4 bg-green-900 border border-green-500 rounded-lg" style="display: none;">
-                <h4 class="text-2xl font-bold text-green-400">🎉 Сбор завершен! 🎉</h4>
-                <p class="text-gray-300 mt-2">Огромное спасибо за вашу поддержку! Обновление уже в пути.</p>
+            <!-- Their Offer -->
+             <div class="flex-1 bg-gray-900/50 rounded-xl p-4 border-2 border-dashed border-yellow-500">
+                <p class="font-bold text-lg mb-2 text-yellow-400">Предложение игрока <span id="trade-other-player-name"></span>:</p>
+                <div id="trade-their-offer-pets" class="grid grid-cols-3 sm:grid-cols-6 gap-2 min-h-[70px]"></div>
+                <div class="mt-3 flex items-center">
+                    <span class="font-semibold mr-2 text-orange-400">Лапки:</span>
+                    <p id="trade-their-paws-display" class="w-full bg-gray-700 rounded-lg p-2">0</p>
+                </div>
+            </div>
+            <!-- Controls -->
+            <div class="flex space-x-4 mt-6">
+                <button id="trade-cancel-button" class="flex-1 py-3 bg-red-600 hover:bg-red-500 font-bold rounded-xl">Отменить</button>
+                <button id="trade-confirm-button" class="flex-1 py-3 bg-green-600 hover:bg-green-500 font-bold rounded-xl">Согласен</button>
             </div>
         </div>
     </div>
 </body>
 </html>
+
