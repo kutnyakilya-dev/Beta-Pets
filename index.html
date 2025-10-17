@@ -13,9 +13,9 @@
     
     <script type="module">
         // --- Импорт функций Firebase ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import { getFirestore } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js";
+        import { getFirestore } from "https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js";
 
         // --- Конфигурация Firebase ---
         const firebaseConfig = {
@@ -791,7 +791,12 @@
                     signInAnonymously(auth).catch((error) => {
                         console.error("Anonymous sign-in failed:", error.code, error.message);
                         document.getElementById('user-id-display').textContent = 'Ошибка подключения';
-                        showToast("Не удалось подключиться к серверам.");
+                        // Улучшенная обработка ошибок
+                        if (error.code === 'auth/configuration-not-found') {
+                            showToast("Ошибка: Анонимный вход не включен в консоли Firebase.");
+                        } else {
+                            showToast("Не удалось подключиться к серверам.");
+                        }
                     });
                 }
             });
@@ -996,3 +1001,4 @@
 
 </body>
 </html>
+
