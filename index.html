@@ -106,8 +106,9 @@
         }
         
         let clickPlayer, navClickSynth, reelTickSynth, isMusicPlaying = false; 
-        const backgroundMusic = document.getElementById('backgroundMusic');
+        let backgroundMusic = null;
         function playMusic(src = "https://files.catbox.moe/b1gm68.mp3", forceRestart = false) {
+             if (!backgroundMusic) return;
              if (backgroundMusic.src !== src || forceRestart) {
                 backgroundMusic.src = src;
              }
@@ -384,6 +385,7 @@
         // --- ИНИЦИАЛИЗАЦИЯ ---
         
         async function initGame() {
+            backgroundMusic = document.getElementById('backgroundMusic');
             updateAppState(false); 
             loadPaws();
             migrateInventory(); 
@@ -624,3 +626,4 @@
     </div>
 </body>
 </html>
+
