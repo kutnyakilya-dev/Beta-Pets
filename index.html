@@ -17,7 +17,64 @@
         const PASSIVE_TICK_RATE = 1000; 
         const SOUND_COOLDOWN = 150; 
         let passiveIntervalId = null; 
-// ... existing code ... -->
+        let lastSoundTime = 0; 
+        let currentCaseId = 'farmer'; 
+        window.gameState = {
+            paws: 0.00, 
+            baseClickValue: 0.09,
+            inventory: [], 
+            isDbReady: false, 
+            selectedPets: [], 
+            passiveRate: 0.00, 
+            upgrades: {
+                equippedPetsLevel: 0, 
+            },
+            foundPets: [], 
+            isCollectionRewardClaimed: false,
+            // Новые состояния для обновления
+            promo: { active: false, multiplier: 1, endTime: 0, used: false },
+            luck: { active: false, multiplier: 1, endTime: 0, used: false },
+            exoticCase: { unlocked: false, endTime: 0 }
+        };
+        
+        const FARMER_CASE_COST = 100.00; 
+        const JUNGLE_CASE_COST = 2000.00;
+        const EXOTIC_CASE_COST = 200000.00;
+
+        // --- УЛУЧШЕНИЯ И ИХ СТОИМОСТЬ ---
+        const UPGRADE_TIERS = {
+            equippedPets: [
+                { level: 1, cost: 2000.00, newMax: 4, name: "Дополнительное Место (I)" },
+                { level: 2, cost: 4000.00, newMax: 5, name: "Дополнительное Место (II)" },
+            ]
+        };
+
+        // --- СПИСОК ПРЕДМЕТОВ ---
+        const FARMER_CASE_ITEMS = [
+            { name: "Собака", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 35.00, icon: "https://files.catbox.moe/nccx9g.png", value: 25.00, passiveValue: 0.08 },
+            { name: "Овца", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 35.00, icon: "https://files.catbox.moe/v2hob0.png", value: 40.00, passiveValue: 0.10 }, 
+            { name: "Корова", rarity: "Необычный", border: "border-blue-500", color: "text-blue-500", weight: 10.00, icon: "https://files.catbox.moe/o08ewe.png", value: 60.00, passiveValue: 0.13 }, 
+            { name: "Лиса", rarity: "Необычный", border: "border-blue-500", color: "text-blue-500", weight: 10.00, icon: "https://files.catbox.moe/pl1ae0.png", value: 67.00, passiveValue: 0.15 }, 
+            { name: "Пчела", rarity: "Ультра Редкий", border: "border-purple-600", color: "text-purple-600", weight: 3.00, icon: "https://files.catbox.moe/kvm7wb.png", value: 100.00, passiveValue: 0.23 },
+            { name: "Козлик", rarity: "Ультра Редкий", border: "border-purple-600", color: "text-purple-600", weight: 3.00, icon: "https://files.catbox.moe/yjd6lu.png", value: 101.00, passiveValue: 0.24 },
+            { name: "Петух", rarity: "Легендарный", border: "border-yellow-400", color: "text-yellow-400", weight: 2.50, icon: "https://files.catbox.moe/v40m5p.png", value: 190.00, passiveValue: 0.33 },
+            { name: "Утка-Тыква", rarity: "Мифический", border: "border-red-500", color: "text-red-500", weight: 1.25, icon: "https://files.catbox.moe/a5vory.png", value: 400.00, passiveValue: 0.63 },
+            { name: "Радугобар", rarity: "Секретный", border: "border-rainbow", color: "text-orange-400", weight: 0.25, icon: "https://files.catbox.moe/42dehy.png", value: 1000.00, passiveValue: 1.11, isHiddenInPreview: true, previewName: "Секретный", previewIcon: "https://placehold.co/60x60/374151/fff?text=?" }, 
+        ];
+
+        const JUNGLE_CASE_ITEMS = [
+            { name: "Жук", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 34.975, icon: "https://files.catbox.moe/r8hzet.jpg", value: 250.00, passiveValue: 0.80 },
+            { name: "Бурундук", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 34.975, icon: "https://files.catbox.moe/xmeoz7.jpg", value: 300.00, passiveValue: 0.90 },
+            { name: "Волк", rarity: "Необычный", border: "border-blue-500", color: "text-blue-500", weight: 10.00, icon: "https://files.catbox.moe/16lk6v.jpg", value: 550.00, passiveValue: 1.30 },
+            { name: "Паук", rarity: "Необычный", border: "border-blue-500", color: "text-blue-500", weight: 10.00, icon: "https://files.catbox.moe/zz5f84.jpg", value: 600.00, passiveValue: 1.55 },
+            { name: "Ящерица", rarity: "Ультра Редкий", border: "border-purple-600", color: "text-purple-600", weight: 3.00, icon: "https://files.catbox.moe/22onk4.jpg", value: 800.00, passiveValue: 1.80 },
+            { name: "Панда", rarity: "Ультра Редкий", border: "border-purple-600", color: "text-purple-600", weight: 3.00, icon: "https://files.catbox.moe/rxydzq.jpg", value: 1100.00, passiveValue: 2.40 },
+            { name: "Жираф", rarity: "Легендарный", border: "border-yellow-400", color: "text-yellow-400", weight: 1.25, icon: "https://files.catbox.moe/xstk1s.jpg", value: 2600.00, passiveValue: 4.30 },
+            { name: "Попугай Ара", rarity: "Легендарный", border: "border-yellow-400", color: "text-yellow-400", weight: 1.25, icon: "https://files.catbox.moe/yqz28i.jpg", value: 2400.00, passiveValue: 4.00 },
+            { name: "Четырёх-головая Кобра", rarity: "Мифический", border: "border-red-500", color: "text-red-500", weight: 0.625, icon: "https://files.catbox.moe/7nor3l.jpg", value: 3500.00, passiveValue: 6.60, clickBonus: 0.02 },
+            { name: "Горилла Мандарина", rarity: "Мифический", border: "border-red-500", color: "text-red-500", weight: 0.625, icon: "https://files.catbox.moe/2s07bm.jpg", value: 4400.00, passiveValue: 7.00, clickBonus: 0.02 },
+            { name: "Пантера", rarity: "Секретный", border: "border-rainbow", color: "text-orange-400", weight: 0.125, icon: "https://files.catbox.moe/gkav13.jpg", value: 10000.00, passiveValue: 9.00, isHiddenInPreview: true, previewName: "Секретный", previewIcon: "https://placehold.co/60x60/374151/fff?text=?", clickBonus: 0.02 },
+            { name: "Огненный Тигр", rarity: "Секретный", border: "border-rainbow", color: "text-orange-400", weight: 0.125, icon: "https://files.catbox.moe/wg01g8.jpg", value: 12000.00, passiveValue: 10.80, isHiddenInPreview: true, previewName: "Секретный", previewIcon: "https://placehold.co/60x60/374151/fff?text=?", clickBonus: 0.02 },
             { name: "Оранкл", rarity: "Мега Секретный", border: "border-mega-secret", color: "text-yellow-200", weight: 0.05, icon: "https://files.catbox.moe/p26t9k.jpg", value: 30000.00, passiveValue: 30.00, isHiddenInPreview: true, previewName: "?????", previewIcon: "https://placehold.co/60x60/374151/fff?text=?", isMegaSecret: true, clickBonus: 0.04 },
         ];
         
