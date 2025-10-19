@@ -32,7 +32,7 @@
             },
             foundPets: [], 
             isCollectionRewardClaimed: false,
-            isThemeRewardClaimed: false,
+            isThemeRewardClaimed: true, // ИЗМЕНЕНО: Тема теперь разблокирована по умолчанию
             unlockedThemes: ['standard', 'purple_space'],
             currentTheme: 'purple_space',
             unlockedMusic: ['standard'],
@@ -106,7 +106,7 @@
         
         const MUSIC_TRACKS = {
             standard: { name: "Стандартная", src: "https://files.catbox.moe/b1gm68.mp3" },
-            crystal: { name: "Кристальная", src: "https://files.catbox.moe/ran4qx.mp3" },
+            crystal: { name: "Фиолетовый Кристалл", src: "https://files.catbox.moe/ran4qx.mp3" }, // ИЗМЕНЕНО
         };
 
         const THEMES = {
@@ -121,7 +121,7 @@
                     }`
             },
             'purple_space': {
-                name: "Фиолетовый Космос",
+                name: "Фиолетовый Кристалл", // ИЗМЕНЕНО
                 css: `
                     :root {
                         --bg-primary: #1E123F; 
@@ -306,7 +306,7 @@
                     upgrades: JSON.parse(localStorage.getItem('petFarmUpgrades')) || { equippedPetsLevel: 0 },
                     foundPets: JSON.parse(localStorage.getItem('petFarmFoundPets')) || [],
                     isCollectionRewardClaimed: JSON.parse(localStorage.getItem('petFarmCollectionRewardClaimed')) || false,
-                    isThemeRewardClaimed: JSON.parse(localStorage.getItem('petFarmThemeRewardClaimed')) || false,
+                    isThemeRewardClaimed: JSON.parse(localStorage.getItem('petFarmThemeRewardClaimed')) || true, // ИЗМЕНЕНО: всегда true при загрузке
                     unlockedThemes: JSON.parse(localStorage.getItem('petFarmUnlockedThemes')) || ['standard', 'purple_space'],
                     currentTheme: localStorage.getItem('petFarmCurrentTheme') || 'purple_space',
                     unlockedMusic: JSON.parse(localStorage.getItem('petFarmUnlockedMusic')) || ['standard'],
@@ -317,7 +317,7 @@
                 return parseFloat(localStorage.getItem('petFarmPaws')) || 0.00;
             } catch (e) {
                 console.error("Ошибка при загрузке из LocalStorage:", e);
-                Object.assign(window.gameState, { inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false, isThemeRewardClaimed: false, unlockedThemes: ['standard', 'purple_space'], currentTheme: 'purple_space', unlockedMusic: ['standard'], musicPlaylist: ['standard'], currentMusicTrackIndex: 0 });
+                Object.assign(window.gameState, { inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false, isThemeRewardClaimed: true, unlockedThemes: ['standard', 'purple_space'], currentTheme: 'purple_space', unlockedMusic: ['standard'], musicPlaylist: ['standard'], currentMusicTrackIndex: 0 }); // ИЗМЕНЕНО
                 return 0.00;
             }
         }
@@ -1046,7 +1046,7 @@
             }
             savePaws(window.gameState.paws);
             document.getElementById('theme-reward-modal').style.display = 'none';
-            showToast('🎉 Тема "Фиолетовый Космос" и новая музыка разблокированы!');
+            showToast('🎉 Тема "Фиолетовый Кристалл" и новая музыка разблокированы!'); // ИЗМЕНЕНО
         }
 
 
@@ -1080,6 +1080,7 @@
             setupResetConfirmationListener();
             requestWakeLock();
             
+            // Этот блок больше не будет показывать модальное окно с наградой для новых игроков
             if (!window.gameState.isThemeRewardClaimed) {
                 document.getElementById('theme-reward-modal').style.display = 'flex';
             } else {
@@ -1489,7 +1490,7 @@
         <ul class="list-disc list-inside space-y-2">
             <li class="font-bold text-yellow-300" id="updates-list-version"></li>
             <li><span class="text-green-400 font-semibold">НОВАЯ СИСТЕМА:</span> Добавлены темы оформления и выбор музыки!</li>
-            <li><span class="text-purple-400 font-semibold">НОВАЯ ТЕМА:</span> "Фиолетовый кристалл" и новый трек в награду.</li>
+            <li><span class="text-purple-400 font-semibold">НОВАЯ ТЕМА:</span> "Фиолетовый Кристалл" и новый трек в награду.</li>
              <li><span class="text-blue-400 font-semibold">ИЗМЕНЕНИЕ:</span> Обновлен дизайн настроек.</li>
         </ul>
     </div><button onclick="window.closeUpdatesScreen()" class="w-full py-3 bg-blue-500 hover:bg-blue-400 font-bold rounded-xl mt-6">Начать играть!</button></div></div>
@@ -1510,9 +1511,9 @@
     <div id="theme-reward-modal" class="modal fixed inset-0 flex items-center justify-center z-[1200] p-4" style="display: none;">
         <div class="modal-content p-8 rounded-2xl text-center shadow-2xl w-full max-w-md border-t-4 border-purple-500">
             <h2 class="text-3xl font-extrabold text-purple-400 mb-4"><i class="fas fa-gem mr-3"></i>Награда за Коллекцию!</h2>
-            <p class="text-lg mb-6">За открытие прошлой полной коллекции вы получаете тему "Фиолетовый кристалл" и новую музыку!</p>
+            <p class="text-lg mb-6">За открытие прошлой полной коллекции вы получаете тему "Фиолетовый Кристалл" и новую музыку!</p>
             <div class="p-4 border-2 border-dashed border-purple-400 rounded-xl mb-6 bg-gray-900">
-                <p class="font-bold text-xl">Тема: Фиолетовый кристалл</p>
+                <p class="font-bold text-xl">Тема: Фиолетовый Кристалл</p>
                 <div class="w-full h-16 mt-2 rounded-lg bg-gradient-to-br from-indigo-900 via-purple-900 to-fuchsia-900"></div>
             </div>
             <button onclick="window.claimThemeReward()" class="w-full py-3 bg-purple-600 hover:bg-purple-500 font-bold rounded-xl mt-6">Забрать Награду</button>
@@ -1538,4 +1539,3 @@
     </div>
 </body>
 </html>
-
