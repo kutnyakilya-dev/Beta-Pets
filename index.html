@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pet Farm Clicker</title>
+    <title>My Pets</title>
     
 <script src="https://cdn.tailwindcss.com"></script>
     
@@ -14,7 +14,7 @@
     
 <script type="module">
         // --- Глобальные настройки и состояние ---
-        const CURRENT_UPDATE_VERSION = '2.3.0'; // Изменено
+        const CURRENT_UPDATE_VERSION = '2.3.0'; 
         const PASSIVE_TICK_RATE = 1000; 
         const SOUND_COOLDOWN = 150; 
         let passiveIntervalId = null; 
@@ -32,10 +32,9 @@
             },
             foundPets: [], 
             isCollectionRewardClaimed: false,
-            // --- НОВЫЕ СВОЙСТВА ДЛЯ ТЕМ И МУЗЫКИ ---
             isThemeRewardClaimed: false,
-            unlockedThemes: ['standard'],
-            currentTheme: 'standard',
+            unlockedThemes: ['standard', 'purple_space'],
+            currentTheme: 'purple_space',
             unlockedMusic: ['standard'],
             musicPlaylist: ['standard'],
             currentMusicTrackIndex: 0,
@@ -45,7 +44,6 @@
         const JUNGLE_CASE_COST = 2000.00;
         const SNOWY_CASE_COST = 120000.00;
 
-        // --- УЛУЧШЕНИЯ И ИХ СТОИМОСТЬ ---
         const UPGRADE_TIERS = {
             equippedPets: [
                 { level: 1, cost: 2000.00, newMax: 4, name: "Дополнительное Место (I)" },
@@ -53,7 +51,6 @@
             ]
         };
 
-        // --- СПИСОК ПРЕДМЕТОВ С РЕДКОСТЯМИ, ЦВЕТАМИ И ЦЕНАМИ ПРОДАЖИ ---
         const FARMER_CASE_ITEMS = [
             { name: "Собака", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 35.00, icon: "https://files.catbox.moe/nccx9g.png", value: 25.00, passiveValue: 0.08, description: "Верный друг и охранник фермы." },
             { name: "Овца", rarity: "Обычный", border: "border-gray-400", color: "text-gray-400", weight: 35.00, icon: "https://files.catbox.moe/v2hob0.png", value: 40.00, passiveValue: 0.10, description: "Пушистое облачко, дающее теплую шерсть." }, 
@@ -107,18 +104,11 @@
         const ALL_PETS = [...new Map([...FARMER_CASE_ITEMS, ...JUNGLE_CASE_ITEMS, ...SNOWY_CASE_ITEMS].map(item => [item.name, item])).values()];
         const COLLECTION_REWARD = 22222;
         
-        // --- НОВЫЕ КОНСТАНТЫ ДЛЯ МУЗЫКИ И ТЕМ ---
         const MUSIC_TRACKS = {
             standard: { name: "Стандартная", src: "https://files.catbox.moe/b1gm68.mp3" },
             crystal: { name: "Кристальная", src: "https://files.catbox.moe/ran4qx.mp3" },
         };
 
-        // --- СИСТЕМА ТЕМ ---
-        // Чтобы добавить новую тему, скопируйте объект, измените ID (например, 'ocean_breeze'),
-        // название и CSS. CSS использует переменные для легкой настройки.
-        // Когда вы добавите новый элемент в HTML (например, новую кнопку), 
-        // просто используйте классы с переменными (например, bg-[var(--bg-primary)]) 
-        // или добавьте новый стиль для этого элемента в каждую тему здесь.
         const THEMES = {
             'standard': {
                 name: "Стандарт",
@@ -130,31 +120,71 @@
                         --modal-bg: rgba(0, 0, 0, 0.8); --modal-content-bg: #2d3748;
                     }`
             },
-            'purple_crystal': {
-                name: "Фиолетовый кристалл",
+            'purple_space': {
+                name: "Фиолетовый Космос",
                 css: `
                     :root {
-                        --bg-primary: #110c22; --bg-secondary: #2c1f4a; --bg-tertiary: #1e153a;
-                        --bg-accent: #5a3c9a; --text-primary: #e6dffc; --text-secondary: #bca9f0;
-                        --text-accent: #c48eff; --border-primary: #5a3c9a; --header-bg: #1a0f35;
-                        --modal-bg: rgba(18, 12, 34, 0.7); --modal-content-bg: #2c1f4a;
+                        --bg-primary: #1E123F; 
+                        --bg-secondary: #190D36; 
+                        --bg-tertiary: #110927;
+                        --bg-accent: #7C3AED; 
+                        --text-primary: #EDE9FE; 
+                        --text-secondary: #D8B4FE;
+                        --text-accent: #C4B5FD; 
+                        --border-primary: #581C87; 
+                        --header-bg: #110927;
+                        --modal-bg: rgba(12, 5, 23, 0.7); 
+                        --modal-content-bg: #190D36;
                     }
-                    .bottom-nav, .header, #pet-preview-content, .modal-content, .case-card, #inventory-empty-state, .inventory-item, #settings-section > div, .bg-gray-800 {
+                    #star-canvas {
+                        position: fixed; top: 0; left: 0;
+                        width: 100%; height: 100%;
+                        z-index: -1;
+                    }
+                    .bottom-nav, .header, #pet-preview-content, .modal-content, #inventory-empty-state, .inventory-item, #settings-section > div, .bg-gray-800 {
                          background-color: var(--bg-secondary) !important;
                          border-color: var(--border-primary) !important;
-                         box-shadow: 0 4px 15px rgba(138, 43, 226, 0.2);
+                         box-shadow: 0 4px 20px rgba(124, 58, 237, 0.25);
+                    }
+                    #cases-section .case-card {
+                        background-color: rgba(25, 13, 54, 0.5) !important;
+                        backdrop-filter: blur(10px);
+                        -webkit-backdrop-filter: blur(10px);
+                        border: 1px solid var(--border-primary) !important;
+                    }
+                    #click-button {
+                        background: radial-gradient(circle, #a855f7, #581c87) !important;
+                        border: 2px solid #d8b4fe;
+                        box-shadow: 0 0 20px #a855f7, 0 0 40px #581c87, inset 0 0 15px rgba(255, 255, 255, 0.2);
+                    }
+                    .click-particle {
+                        position: absolute;
+                        border-radius: 50%;
+                        background-color: white;
+                        animation: dust-effect 1s ease-out forwards;
+                        opacity: 0.8;
+                        pointer-events: none;
+                    }
+                    @keyframes dust-effect {
+                        0% { transform: translate(0, 0); opacity: 0.8; }
+                        100% { transform: translate(var(--tx), var(--ty)); opacity: 0; }
                     }
                     body, html { background-color: var(--bg-primary); }
                     .bg-gray-900 { background-color: var(--bg-tertiary) !important; }
                     .text-white, .text-gray-300 { color: var(--text-primary) !important; }
                     .text-gray-400 { color: var(--text-secondary) !important; }
                     .border-gray-700 { border-color: var(--border-primary) !important; }
-                    .nav-item.active { color: var(--text-accent) !important; }
-                    .modal { backdrop-filter: blur(5px); }
+                    .nav-item.active { 
+                        color: var(--text-accent) !important; 
+                        text-shadow: 0 0 8px var(--text-accent);
+                    }
+                    .modal { backdrop-filter: blur(8px); }
                 `
             }
         };
 
+        // --- Глобальная переменная для отмены анимации ---
+        let starAnimationId = null;
 
         function getMaxSelectedPets() {
             const level = window.gameState.upgrades.equippedPetsLevel;
@@ -196,7 +226,6 @@
             if (navClickSynth) { try { const audioNow = Tone.context.currentTime; navClickSynth.triggerAttackRelease("G5", "32n", audioNow); navClickSynth.triggerAttackRelease("A5", "32n", audioNow + 0.05); } catch (e) { console.error("Audio scheduling error:", e); } }
         }
 
-        // --- Screen Wake Lock ---
         let wakeLock = null;
         const requestWakeLock = async () => {
             if ('wakeLock' in navigator) {
@@ -278,8 +307,8 @@
                     foundPets: JSON.parse(localStorage.getItem('petFarmFoundPets')) || [],
                     isCollectionRewardClaimed: JSON.parse(localStorage.getItem('petFarmCollectionRewardClaimed')) || false,
                     isThemeRewardClaimed: JSON.parse(localStorage.getItem('petFarmThemeRewardClaimed')) || false,
-                    unlockedThemes: JSON.parse(localStorage.getItem('petFarmUnlockedThemes')) || ['standard'],
-                    currentTheme: localStorage.getItem('petFarmCurrentTheme') || 'standard',
+                    unlockedThemes: JSON.parse(localStorage.getItem('petFarmUnlockedThemes')) || ['standard', 'purple_space'],
+                    currentTheme: localStorage.getItem('petFarmCurrentTheme') || 'purple_space',
                     unlockedMusic: JSON.parse(localStorage.getItem('petFarmUnlockedMusic')) || ['standard'],
                     musicPlaylist: JSON.parse(localStorage.getItem('petFarmMusicPlaylist')) || ['standard'],
                     currentMusicTrackIndex: parseInt(localStorage.getItem('petFarmCurrentMusicIndex')) || 0,
@@ -288,8 +317,7 @@
                 return parseFloat(localStorage.getItem('petFarmPaws')) || 0.00;
             } catch (e) {
                 console.error("Ошибка при загрузке из LocalStorage:", e);
-                // Reset to defaults on error
-                Object.assign(window.gameState, { inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false, isThemeRewardClaimed: false, unlockedThemes: ['standard'], currentTheme: 'standard', unlockedMusic: ['standard'], musicPlaylist: ['standard'], currentMusicTrackIndex: 0 });
+                Object.assign(window.gameState, { inventory: [], selectedPets: [], upgrades: { equippedPetsLevel: 0 }, foundPets: [], isCollectionRewardClaimed: false, isThemeRewardClaimed: false, unlockedThemes: ['standard', 'purple_space'], currentTheme: 'purple_space', unlockedMusic: ['standard'], musicPlaylist: ['standard'], currentMusicTrackIndex: 0 });
                 return 0.00;
             }
         }
@@ -655,7 +683,44 @@
             }
         }
         
-        function performPawsClick() {
+        function createClickParticles(e) {
+            if (window.gameState.currentTheme !== 'purple_space') return;
+
+            const clickButton = document.getElementById('click-button');
+            const clickArea = clickButton.parentElement;
+            if (!clickArea) return;
+
+            const rect = clickButton.getBoundingClientRect();
+            const parentRect = clickArea.getBoundingClientRect();
+
+            for (let i = 0; i < 15; i++) {
+                const particle = document.createElement('div');
+                particle.classList.add('click-particle');
+
+                // Начальная позиция у нижнего края кнопки
+                const x = (rect.left + (rect.width * Math.random())) - parentRect.left;
+                const y = (rect.top + rect.height) - parentRect.top - 5; // Чуть выше нижнего края
+
+                particle.style.left = `${x}px`;
+                particle.style.top = `${y}px`;
+
+                const size = Math.random() * 4 + 1; // Размер частицы
+                particle.style.width = `${size}px`;
+                particle.style.height = `${size}px`;
+
+                // Конечное смещение
+                const tx = (Math.random() - 0.5) * 30; // Небольшой разброс по горизонтали
+                const ty = Math.random() * 50 + 20;    // Падение вниз
+
+                particle.style.setProperty('--tx', `${tx}px`);
+                particle.style.setProperty('--ty', `${ty}px`);
+
+                clickArea.appendChild(particle);
+                setTimeout(() => { particle.remove(); }, 1000);
+            }
+        }
+
+        function performPawsClick(e) {
             if (!window.gameState.isDbReady) return;
             window.gameState.paws += calculateClickValue();
             updatePawsDisplay();
@@ -663,12 +728,22 @@
             const clickButton = document.getElementById('click-button');
             clickButton.classList.add('scale-95');
             setTimeout(() => { clickButton.classList.remove('scale-95'); }, 100);
+            
+            if (e) createClickParticles(e);
+            
             playMusic(); 
         }
+
         function setupClickListener() {
             const clickButton = document.getElementById('click-button');
-            clickButton.addEventListener('touchstart', e => { e.preventDefault(); performPawsClick(); if (e.touches.length >= 2) performPawsClick(); }, { passive: false });
-            clickButton.addEventListener('click', () => { performPawsClick(); });
+            clickButton.addEventListener('touchstart', e => {
+                e.preventDefault();
+                performPawsClick(e.touches[0]); 
+                if (e.touches.length >= 2) performPawsClick(e.touches[1]);
+            }, { passive: false });
+            clickButton.addEventListener('click', e => {
+                performPawsClick(e);
+            });
         }
         
         function setupResetConfirmationListener() {
@@ -696,7 +771,7 @@
 
             if (isInventoryItem) {
                 petData = window.gameState.inventory.find(p => p.id === identifier);
-            } else { // source === 'case'
+            } else { 
                 petData = ALL_PETS.find(p => p.name === identifier);
             }
 
@@ -775,7 +850,6 @@
             document.getElementById('pet-preview-modal').style.display = 'none';
         }
 
-        // --- Логика Коллекции ---
         window.showCollectionModal = function() { playNavClickSound(); renderCollection(); document.getElementById('collection-modal').style.display = 'flex'; };
         window.closeCollectionModal = function() { playNavClickSound(); document.getElementById('collection-modal').style.display = 'none'; };
         window.claimCollectionReward = function() {
@@ -809,7 +883,7 @@
             });
             const allFound = foundCount >= totalCount;
             const rewardClaimed = window.gameState.isCollectionRewardClaimed;
-            rewardButton.className = 'w-full py-3 font-bold rounded-xl transition-all shadow-lg text-lg'; // Reset classes
+            rewardButton.className = 'w-full py-3 font-bold rounded-xl transition-all shadow-lg text-lg';
             if (rewardClaimed) {
                 rewardButton.disabled = true;
                 rewardButton.textContent = 'Награда получена';
@@ -825,16 +899,76 @@
             }
         }
         
-        // --- НОВЫЕ ФУНКЦИИ: ТЕМЫ И МУЗЫКА ---
         window.applyTheme = function(themeId) {
+            // Отменяем существующую анимацию звезд, если она есть
+            if (starAnimationId) {
+                cancelAnimationFrame(starAnimationId);
+                starAnimationId = null;
+                const existingCanvas = document.getElementById('star-canvas');
+                if (existingCanvas) existingCanvas.remove();
+            }
+
             if (!THEMES[themeId]) return;
             document.getElementById('theme-styles').innerHTML = THEMES[themeId].css;
             window.gameState.currentTheme = themeId;
             savePaws(window.gameState.paws);
+
+            // Если новая тема - это космическая, запускаем анимацию
+            if (themeId === 'purple_space') {
+                const canvas = document.createElement('canvas');
+                canvas.id = 'star-canvas';
+                document.body.prepend(canvas); // Добавляем в начало body
+                
+                const ctx = canvas.getContext('2d');
+                let stars = [];
+                const numStars = 200;
+
+                function resizeCanvas() {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                    stars = [];
+                    for(let i = 0; i < numStars; i++) {
+                        stars.push({
+                            x: Math.random() * canvas.width,
+                            y: Math.random() * canvas.height,
+                            radius: Math.random() * 1.5 + 0.5,
+                            vx: (Math.random() - 0.5) / 4, // Медленное горизонтальное движение
+                            vy: Math.random() * 0.5 + 0.2 // Движение вниз
+                        });
+                    }
+                }
+                
+                function draw() {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.fillStyle = '#EDE9FE'; // Цвет звезд
+                    
+                    stars.forEach(star => {
+                        ctx.beginPath();
+                        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        star.x += star.vx;
+                        star.y += star.vy;
+                        
+                        // Возвращаем звезды, которые вышли за пределы экрана
+                        if (star.y > canvas.height) { star.y = 0; star.x = Math.random() * canvas.width; }
+                        if (star.x < 0) { star.x = canvas.width; }
+                        if (star.x > canvas.width) { star.x = 0; }
+                    });
+                    
+                    starAnimationId = requestAnimationFrame(draw);
+                }
+                
+                window.addEventListener('resize', resizeCanvas);
+                resizeCanvas();
+                draw();
+            }
+            
             if(document.getElementById('themes-modal').style.display === 'flex') {
-                renderThemesModal(); // Re-render to show active state
+                renderThemesModal(); 
             }
         }
+
 
         window.showThemesModal = function() { playNavClickSound(); renderThemesModal(); document.getElementById('themes-modal').style.display = 'flex'; };
         window.closeThemesModal = function() { playNavClickSound(); document.getElementById('themes-modal').style.display = 'none'; };
@@ -888,7 +1022,6 @@
             } else if (!isChecked && playlist.includes(trackId)) {
                 window.gameState.musicPlaylist = playlist.filter(id => id !== trackId);
             }
-            // Prevent player from disabling all music which could stop playback
             if (window.gameState.musicPlaylist.length === 0 && isMusicPlaying) {
                  const musicPlayer = document.getElementById('music-player');
                  musicPlayer.pause();
@@ -902,19 +1035,18 @@
             if(window.gameState.isThemeRewardClaimed) return;
 
             window.gameState.isThemeRewardClaimed = true;
-            if(!window.gameState.unlockedThemes.includes('purple_crystal')) {
-                window.gameState.unlockedThemes.push('purple_crystal');
+            if(!window.gameState.unlockedThemes.includes('purple_space')) {
+                window.gameState.unlockedThemes.push('purple_space');
             }
             if(!window.gameState.unlockedMusic.includes('crystal')) {
                 window.gameState.unlockedMusic.push('crystal');
-                // Also add it to the playlist automatically
                 if(!window.gameState.musicPlaylist.includes('crystal')) {
                     window.gameState.musicPlaylist.push('crystal');
                 }
             }
             savePaws(window.gameState.paws);
             document.getElementById('theme-reward-modal').style.display = 'none';
-            showToast('🎉 Тема "Фиолетовый кристалл" и новая музыка разблокированы!');
+            showToast('🎉 Тема "Фиолетовый Космос" и новая музыка разблокированы!');
         }
 
 
@@ -932,10 +1064,10 @@
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
 
-        async function initGame() {
+        function startGame() {
             updateAppState(false); 
             window.gameState.paws = loadPaws();
-            window.applyTheme(window.gameState.currentTheme); // Применяем тему при загрузке
+            window.applyTheme(window.gameState.currentTheme); 
             migrateInventory(); 
             window.gameState.isDbReady = true;
             updatePawsDisplay();
@@ -948,12 +1080,148 @@
             setupResetConfirmationListener();
             requestWakeLock();
             
-            // Показываем сначала модальное окно с темой, если нужно
             if (!window.gameState.isThemeRewardClaimed) {
                 document.getElementById('theme-reward-modal').style.display = 'flex';
             } else {
                 window.checkAndShowUpdatesScreen(); 
             }
+        }
+        
+        function loadInBackground(urls) {
+            console.log(`Starting background load for ${urls.length} assets.`);
+            urls.forEach(assetUrl => {
+                try {
+                    if (assetUrl.match(/\.(mp3|wav|ogg)$/)) {
+                        const audio = new Audio();
+                        audio.src = assetUrl;
+                    } else if (assetUrl.match(/\.(png|jpg|jpeg|gif)$/)) {
+                        const img = new Image();
+                        img.src = assetUrl;
+                    }
+                } catch (error) {
+                    console.warn(`Failed to start background loading for: ${assetUrl}`, error);
+                }
+            });
+        }
+
+        async function initLoading() {
+            const loadingScreen = document.getElementById('loading-screen');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('loading-progress-text');
+
+            const canvas = document.getElementById('particle-canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            let particlesArray = [];
+
+            class Particle {
+                constructor() {
+                    this.x = Math.random() * canvas.width;
+                    this.y = Math.random() * canvas.height;
+                    this.size = Math.random() * 5 + 1;
+                    this.speedX = Math.random() * 3 - 1.5;
+                    this.speedY = Math.random() * 3 - 1.5;
+                    this.color = `hsla(${Math.random() * 360}, 100%, 75%, 0.8)`;
+                }
+                update() {
+                    this.x += this.speedX;
+                    this.y += this.speedY;
+                    if (this.size > 0.2) this.size -= 0.1;
+                    if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
+                    if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
+                }
+                draw() {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            function initParticles() {
+                for (let i = 0; i < 100; i++) {
+                    particlesArray.push(new Particle());
+                }
+            }
+
+            function handleParticles() {
+                for (let i = 0; i < particlesArray.length; i++) {
+                    particlesArray[i].update();
+                    particlesArray[i].draw();
+                    if (particlesArray[i].size <= 0.3) {
+                        particlesArray.splice(i, 1);
+                        i--;
+                        particlesArray.push(new Particle());
+                    }
+                }
+            }
+            
+            let animationFrameId;
+            function animateParticles() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                handleParticles();
+                animationFrameId = requestAnimationFrame(animateParticles);
+            }
+            initParticles();
+            animateParticles();
+            window.addEventListener('resize', () => {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                particlesArray = [];
+                initParticles();
+            });
+
+            const priorityAssets = [];
+            const backgroundAssets = [];
+
+            priorityAssets.push(CASES.farmer.icon);
+            CASES.farmer.items.forEach(item => priorityAssets.push(item.icon));
+
+            backgroundAssets.push(CASES.jungle.icon);
+            CASES.jungle.items.forEach(item => backgroundAssets.push(item.icon));
+            backgroundAssets.push(CASES.snowy.icon);
+            CASES.snowy.items.forEach(item => backgroundAssets.push(item.icon));
+            Object.values(MUSIC_TRACKS).forEach(track => backgroundAssets.push(track.src));
+
+            const uniquePriorityAssets = [...new Set(priorityAssets)];
+            const uniqueBackgroundAssets = [...new Set(backgroundAssets)];
+            
+            let loadedCount = 0;
+            const totalAssets = uniquePriorityAssets.length;
+
+            progressText.textContent = `Загрузка основных ресурсов... 0%`;
+
+            for (const assetUrl of uniquePriorityAssets) {
+                try {
+                    await new Promise((resolve, reject) => {
+                        if (assetUrl.match(/\.(mp3|wav|ogg)$/)) {
+                            const audio = new Audio(); audio.src = assetUrl; audio.oncanplaythrough = resolve; audio.onerror = reject;
+                        } else if (assetUrl.match(/\.(png|jpg|jpeg|gif)$/)) {
+                            const img = new Image(); img.src = assetUrl; img.onload = resolve; img.onerror = reject;
+                        } else {
+                            resolve();
+                        }
+                    });
+                } catch (error) {
+                    console.warn(`Не удалось загрузить приоритетный ассет: ${assetUrl}`, error);
+                }
+                
+                loadedCount++;
+                const progress = (loadedCount / totalAssets) * 100;
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `Загрузка основных ресурсов... ${Math.round(progress)}%`;
+            }
+
+            progressText.textContent = `Запуск игры...`;
+            loadingScreen.classList.add('fade-out');
+            
+            setTimeout(() => {
+                loadingScreen.style.display = 'none';
+                cancelAnimationFrame(animationFrameId);
+                startGame();
+                loadInBackground(uniqueBackgroundAssets);
+            }, 500);
         }
         
         window.setupNavigation = function() {
@@ -974,10 +1242,11 @@
             return { showSection };
         }
         
-        window.onload = initGame;
+        window.onload = initLoading;
     </script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        :root { --bg-primary: #1a202c; } /* Устанавливаем базовый фон для заставки */
         body { font-family: 'Inter', sans-serif; background-color: var(--bg-primary); color: var(--text-primary); margin: 0; padding: 0; display: flex; flex-direction: column; min-height: 10vh; transition: background-color 0.3s; }
         .header { background-color: var(--header-bg); }
         .bottom-nav { background-color: var(--bg-secondary); border-top: 1px solid var(--border-primary); }
@@ -1031,13 +1300,78 @@
         .modal-secret-glow { border: 2px solid #fff; animation: rainbow-glow 3s infinite alternate; }
         @keyframes mega-secret-modal-glow { 0%, 100% { box-shadow: 0 0 30px #ffdf00, inset 0 0 15px #ffdf0044; border-color: #ffdf00; } 50% { box-shadow: 0 0 40px #ffA500, inset 0 0 20px #ffA50055; border-color: #ffA500; } }
         .modal-mega-secret-glow { border: 2px solid; animation: mega-secret-modal-glow 2s infinite alternate; }
+
+        /* --- Стили для экрана загрузки --- */
+        #loading-screen {
+            position: fixed;
+            inset: 0;
+            background-color: #111827;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            transition: opacity 0.5s ease-out;
+        }
+        #loading-screen.fade-out {
+            opacity: 0;
+        }
+        #particle-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+        #loading-screen h1 {
+            font-size: 3rem;
+            font-weight: 900;
+            letter-spacing: 0.1em;
+            text-shadow: 0 0 10px rgba(255, 165, 0, 0.7), 0 0 20px rgba(255, 165, 0, 0.5);
+            margin-bottom: 2rem;
+        }
+        #progress-bar-container {
+            width: 80%;
+            max-width: 400px;
+            height: 20px;
+            background-color: #374151;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid #4b5563;
+            box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+        }
+        #progress-bar {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #f59e0b, #ef4444);
+            border-radius: 8px;
+            transition: width 0.2s ease-out;
+        }
+        #loading-progress-text {
+            margin-top: 1rem;
+            font-size: 1rem;
+            color: #d1d5db;
+        }
     </style>
 </head>
 <body class="min-h-screen">
+    
+    <!-- Экран загрузки -->
+    <div id="loading-screen">
+        <canvas id="particle-canvas"></canvas>
+        <h1 class="text-center px-4">My Pets</h1>
+        <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <p id="loading-progress-text">Инициализация...</p>
+    </div>
+
     <audio id="music-player" onended="window.playNextTrack()"></audio>
 
     <header class="header fixed top-0 left-0 w-full p-3 shadow-lg z-50 flex justify-between items-center h-16 transition-colors">
-        <div class="text-xl font-black tracking-wider">Pet Farm</div>
+        <div class="text-xl font-black tracking-wider">My Pets</div>
         <div class="flex flex-col items-end">
             <p id="paws-display" class="text-lg font-extrabold text-orange-400">Лапки: 0.00</p>
             <p id="user-id-display" class="text-xs mt-0">Локальное хранилище</p>
@@ -1053,9 +1387,11 @@
                 <p id="passive-rate-display" class="text-md text-green-400 font-bold mt-1">Авто: +0.00 / с</p>
                 <p id="loading-message" class="text-md text-red-400 mt-2" style="display: none;">Загрузка данных...</p>
             </div>
-            <button id="click-button" class="w-48 h-48 rounded-full bg-orange-500 text-white text-3xl font-bold transition-all duration-100 ease-out shadow-2xl hover:shadow-orange-500/50 hover:bg-orange-400 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
-                <i class="fas fa-paw"></i>
-            </button>
+             <div id="click-area" class="relative">
+                <button id="click-button" class="w-48 h-48 rounded-full bg-orange-500 text-white text-3xl font-bold transition-all duration-100 ease-out shadow-2xl hover:shadow-orange-500/50 hover:bg-orange-400 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-paw"></i>
+                </button>
+            </div>
         </section>
 
         <section id="inventory-section" class="w-full" style="display: none;">
@@ -1171,7 +1507,6 @@
              <button onclick="window.closePetPreview()" class="w-full mt-4 py-2 bg-gray-600 hover:bg-gray-500 font-bold rounded-xl">Закрыть</button>
         </div>
     </div>
-    <!-- НОВЫЕ МОДАЛЬНЫЕ ОКНА ДЛЯ ТЕМ И МУЗЫКИ -->
     <div id="theme-reward-modal" class="modal fixed inset-0 flex items-center justify-center z-[1200] p-4" style="display: none;">
         <div class="modal-content p-8 rounded-2xl text-center shadow-2xl w-full max-w-md border-t-4 border-purple-500">
             <h2 class="text-3xl font-extrabold text-purple-400 mb-4"><i class="fas fa-gem mr-3"></i>Награда за Коллекцию!</h2>
