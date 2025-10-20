@@ -1312,6 +1312,33 @@
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
 
+        window.addPawsFromInput = function() {
+            const input = document.getElementById('paws-add-input');
+            const amount = parseFloat(input.value);
+
+            if (isNaN(amount) || amount <= 0) {
+                showToast("Введите корректное положительное число.");
+                return;
+            }
+
+            window.gameState.paws += amount;
+            updatePawsDisplay();
+            savePaws(window.gameState.paws);
+            showToast(`✅ ${amount.toLocaleString('ru-RU')} лапок добавлено!`);
+            input.value = '';
+        }
+
+        function setupInputListeners() {
+            const addPawsInput = document.getElementById('paws-add-input');
+            if (addPawsInput) {
+                addPawsInput.addEventListener('keyup', (event) => {
+                    if (event.key === 'Enter') {
+                        window.addPawsFromInput();
+                    }
+                });
+            }
+        }
+
         function startGame() {
             updateAppState(false); 
             window.gameState.paws = loadPaws();
@@ -1327,6 +1354,7 @@
             setupUpdatesContent(); 
             setupClickListener(); 
             setupResetConfirmationListener();
+            setupInputListeners();
             requestWakeLock();
             window.checkAndShowUpdatesScreen();
         }
@@ -1826,6 +1854,13 @@
                 <p class="text-lg font-semibold">Данные игры</p>
                 <button onclick="window.showResetConfirmation()" class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 font-semibold rounded-lg">Сбросить Прогресс</button>
             </div>
+             <div class="p-6 rounded-xl space-y-4 shadow-xl mt-4">
+                <p class="text-lg font-semibold">Добавить Лапки</p>
+                 <div class="flex space-x-2">
+                     <input type="number" id="paws-add-input" class="w-full border rounded-lg p-2 text-center text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Сумма лапок">
+                     <button onclick="window.addPawsFromInput()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg">Ввод</button>
+                </div>
+            </div>
         </section>
     </main>
 
@@ -1908,5 +1943,3 @@
     </div>
 </body>
 </html>
-
-
