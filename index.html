@@ -254,10 +254,7 @@
             
             const upgradeLevel = window.gameState.upgrades.clickPowerLevel;
             if (upgradeLevel > 0) {
-                const totalBonus = UPGRADE_TIERS.clickPower
-                    .slice(0, upgradeLevel)
-                    .reduce((sum, tier) => sum + tier.bonus, 0);
-                totalPower += totalBonus;
+                totalPower = UPGRADE_TIERS.clickPower[upgradeLevel - 1].bonus;
             }
 
             const activePets = window.gameState.inventory.filter(pet => window.gameState.selectedPets.includes(pet.id));
@@ -519,7 +516,7 @@
                     if (upgradeType === 'equippedPets') {
                         description = `Лимит: <span class="font-semibold ${isPurchased ? 'text-gray-400' : 'text-yellow-400'}">${tier.newMax} питомцев</span>`;
                     } else if (upgradeType === 'clickPower') {
-                        description = `Бонус: <span class="font-semibold ${isPurchased ? 'text-gray-400' : 'text-yellow-400'}">+${tier.bonus.toLocaleString('ru-RU')} к силе клика</span>`;
+                        description = `Сила клика станет: <span class="font-semibold ${isPurchased ? 'text-gray-400' : 'text-yellow-400'}">${tier.bonus.toLocaleString('ru-RU')}</span>`;
                     }
 
                     html += `<div class="${cardClass}">
@@ -569,7 +566,6 @@
              return `<img src="${iconUrl}" alt="${item.name}" class="${sizeClass} object-cover bg-gray-700 ${marginClass} rounded-lg" onerror="this.onerror=null;this.src='https://placehold.co/40x40/374151/fff?text=?';">`;
         }
 
-        // --- НОВЫЕ ФУНКЦИИ ИНВЕНТАРЯ ---
         window.startPinning = function() {
             playNavClickSound();
             isPinningMode = true;
@@ -685,14 +681,14 @@
                 isPinned: false, 
                 name: `Неоновый ${basePet.name}`,
                 passiveValue: basePet.passiveValue * 2.40,
-                value: basePet.value * 5, // Увеличим цену продажи
+                value: basePet.value * 5,
             };
 
             window.gameState.inventory = window.gameState.inventory.filter(p => !neonSelection.includes(p.id));
             window.gameState.inventory.push(newNeonPet);
             
             showToast(`✨ Поздравляем! Вы создали: ${newNeonPet.name}!`);
-            exitNeonMode(); // Выходим из режима неона
+            exitNeonMode();
             savePaws(window.gameState.paws);
             updatePawsDisplay();
         };
@@ -828,22 +824,30 @@
             for (const item of caseData.items) { if (random < item.weight) return item; random -= item.weight; }
             return caseData.items[0]; 
         }
-        function generateReel(winningItem, reelElement) {
+        function generateReel(winningItem, reelElement, isX10 = false) {
             reelElement.innerHTML = '';
             const items = Array.from({ length: 75 }, () => getWeightedRandomItem(currentCaseId));
             items.push(winningItem); 
             items.push(...Array.from({ length: 15 }, () => getWeightedRandomItem(currentCaseId)));
+            
+            const itemWidth = isX10 ? 80 : 90;
+            const itemGap = 8;
+            const itemWidthTotal = itemWidth + itemGap;
+
             items.forEach(item => {
                 let tileClass = `item-tile flex-shrink-0 flex flex-col items-center justify-center rounded-lg border-2 ${item.border}`;
                 if (item.isMegaSecret) tileClass += ' glow-mega-secret';
-                reelElement.innerHTML += `<div class="${tileClass}">${getIconHtml(item, false, true, true)}</div>`;
+                reelElement.innerHTML += `<div class="${tileClass}" style="width: ${itemWidth}px; height: ${itemWidth}px;">${getIconHtml(item, false, true, true)}</div>`;
             });
-            const itemWidthTotal = 98;
-            const itemWidth = 90; 
             const stopOffset = (reelElement.parentElement.clientWidth / 2) - (75 * itemWidthTotal + (itemWidth / 2));
             return stopOffset;
         }
-        window.closeWinModal = function() { playNavClickSound(); document.getElementById('win-notification-modal').style.display = 'none'; window.showCaseDetails(currentCaseId, true); };
+        window.closeWinModal = function() { 
+            playNavClickSound(); 
+            document.getElementById('win-notification-modal').style.display = 'none'; 
+            isSpinning = false;
+            window.showCaseDetails(currentCaseId, true); 
+        };
         window.showWinModal = function(itemData) {
             const newItem = { ...itemData, date: new Date().toISOString(), id: crypto.randomUUID(), isPinned: false, isNeon: false };
             if (!window.gameState.foundPets.includes(newItem.name)) { window.gameState.foundPets.push(newItem.name); }
@@ -871,22 +875,26 @@
             if (!window.gameState.isDbReady) return showToast("Подождите, игра еще загружается...");
             
             const totalCost = caseData.cost * count;
-            if (window.gameState.paws < totalCost) return showToast(`Недостаточно Лапок! Нужно ${totalCost.toLocaleString('ru-RU')} `);
+            if (window.gameState.paws < totalCost) {
+                showToast(`Недостаточно Лапок! Нужно ${totalCost.toLocaleString('ru-RU')} `);
+                return;
+            }
 
             isSpinning = true;
             window.gameState.paws -= totalCost;
             savePaws(window.gameState.paws);
-            updatePawsDisplay(); // Update display immediately
+            updatePawsDisplay();
             
             if (count === 1) {
                 const openButton = document.getElementById('open-case-button-1');
                 const openButton10 = document.getElementById('open-case-button-10');
                 if(openButton) openButton.disabled = true;
                 if(openButton10) openButton10.disabled = true;
+                window.showCaseDetails(currentCaseId, true); // Update button colors to gray
 
                 const winningItem = getWeightedRandomItem(currentCaseId);
                 const reel = document.getElementById('case-reel');
-                const stopOffset = generateReel(winningItem, reel);
+                const stopOffset = generateReel(winningItem, reel, false);
                 
                 reel.style.transition = 'none';
                 reel.style.transform = 'translateX(0px)';
@@ -894,48 +902,54 @@
                 setTimeout(() => {
                     reel.style.transition = 'transform 5s cubic-bezier(0.2, 0.7, 0.4, 1)';
                     reel.style.transform = `translateX(${stopOffset}px)`;
-                    // Sound logic etc. remains the same...
+
+                    const soundInterval = setInterval(() => {
+                        if (!isSpinning) { clearInterval(soundInterval); return; }
+                        try { if (reelTickSynth && Tone.context.state === 'running') { reelTickSynth.triggerAttackRelease('C6', '16n', Tone.now()); } } catch(e) {}
+                    }, 100);
+
                     setTimeout(() => {
-                        isSpinning = false;
-                        if(openButton) openButton.disabled = false;
-                        if(openButton10) openButton10.disabled = false;
+                        clearInterval(soundInterval);
                         window.showWinModal(winningItem);
                     }, 5050);
                 }, 50);
 
             } else if (count === 10) {
-                // Logic for x10 opening
+                window.showCaseDetails(currentCaseId, true);
                 const modal = document.getElementById('x10-spin-modal');
                 const container = document.getElementById('x10-reels-container');
                 container.innerHTML = '';
                 const winningItems = Array.from({ length: 10 }, () => getWeightedRandomItem(currentCaseId));
                 
-                // Create 10 reels
                 for(let i = 0; i < 10; i++) {
                     container.innerHTML += `<div class="relative bg-gray-900 rounded-lg border-2 border-gray-700 reel-viewport-x10 overflow-hidden"><div class="reel-indicator-x10"></div><div id="x10-reel-${i}" class="case-reel w-max items-center h-full"></div></div>`;
                 }
                 modal.style.display = 'flex';
 
-                // Animate them
+                const soundIntervalX10 = setInterval(() => {
+                    if (!isSpinning) { clearInterval(soundIntervalX10); return; }
+                    try { if (reelTickSynth && Tone.context.state === 'running') { reelTickSynth.triggerAttackRelease('C7', '16n', Tone.now()); } } catch(e) {}
+                }, 120);
+
                 setTimeout(() => {
                     winningItems.forEach((item, i) => {
                         const reel = document.getElementById(`x10-reel-${i}`);
-                        const stopOffset = generateReel(item, reel);
+                        const stopOffset = generateReel(item, reel, true);
                         reel.style.transition = 'none';
                         reel.style.transform = 'translateX(0px)';
                         setTimeout(() => {
-                            const duration = 4 + Math.random() * 2; // Staggered end times
+                            const duration = 4 + Math.random() * 2;
                             reel.style.transition = `transform ${duration}s cubic-bezier(0.2, 0.7, 0.4, 1)`;
                             reel.style.transform = `translateX(${stopOffset}px)`;
                         }, 50);
                     });
                 }, 100);
 
-                // Show results
                 setTimeout(() => {
                     modal.style.display = 'none';
                     showX10WinModal(winningItems);
                     isSpinning = false;
+                    clearInterval(soundIntervalX10);
                 }, 6500);
             }
         };
@@ -975,7 +989,6 @@
             document.getElementById('case-details-title').textContent = caseData.name;
             renderCasePreview(caseId);
             
-            // Setup buttons
             const openBtn1 = document.getElementById('open-case-button-1');
             const openBtn10 = document.getElementById('open-case-button-10');
             const cost1 = caseData.cost;
@@ -983,7 +996,7 @@
             
             const setupButton = (btn, cost) => {
                 const canAfford = window.gameState.paws >= cost;
-                btn.classList.remove('bg-red-600', 'hover:bg-red-500', 'bg-blue-500', 'hover:bg-blue-400');
+                btn.classList.remove('bg-red-600', 'hover:bg-red-500', 'bg-blue-500', 'hover:bg-blue-400', 'bg-gray-500');
                 btn.disabled = isSpinning;
                 if (isSpinning) {
                     btn.classList.add('bg-gray-500');
@@ -1002,7 +1015,7 @@
             if (!skipSectionChange) {
                 window.setupNavigation().showSection('case-details');
                 const reel = document.getElementById('case-reel');
-                generateReel(caseData.items[0], reel); 
+                generateReel(caseData.items[0], reel, false); 
                 reel.style.transform = 'translateX(0px)';
             }
         };
@@ -1312,33 +1325,6 @@
             if (localStorage.getItem('lastShownUpdateVersion') !== CURRENT_UPDATE_VERSION) { localStorage.setItem('lastShownUpdateVersion', CURRENT_UPDATE_VERSION); }
         };
 
-        window.addPawsFromInput = function() {
-            const input = document.getElementById('paws-add-input');
-            const amount = parseFloat(input.value);
-
-            if (isNaN(amount) || amount <= 0) {
-                showToast("Введите корректное положительное число.");
-                return;
-            }
-
-            window.gameState.paws += amount;
-            updatePawsDisplay();
-            savePaws(window.gameState.paws);
-            showToast(`✅ ${amount.toLocaleString('ru-RU')} лапок добавлено!`);
-            input.value = '';
-        }
-
-        function setupInputListeners() {
-            const addPawsInput = document.getElementById('paws-add-input');
-            if (addPawsInput) {
-                addPawsInput.addEventListener('keyup', (event) => {
-                    if (event.key === 'Enter') {
-                        window.addPawsFromInput();
-                    }
-                });
-            }
-        }
-
         function startGame() {
             updateAppState(false); 
             window.gameState.paws = loadPaws();
@@ -1354,7 +1340,6 @@
             setupUpdatesContent(); 
             setupClickListener(); 
             setupResetConfirmationListener();
-            setupInputListeners();
             requestWakeLock();
             window.checkAndShowUpdatesScreen();
         }
@@ -1634,8 +1619,7 @@
         .case-reel { display:flex; gap: 8px; }
         .item-tile { width: 90px; height: 90px; padding: 2px; background-color: #1f2937; border-radius: 8px; box-shadow: inset 0 0 8px rgba(0,0,0,0.7); overflow: hidden; }
         .reel-indicator { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 6px; height: 100%; background-color: #f59e0b; box-shadow: 0 0 15px #f59e0b; z-index: 20; border-radius: 3px; }
-        .reel-viewport-x10 { height: 60px; }
-        .reel-viewport-x10 .item-tile { width: 50px; height: 50px; }
+        .reel-viewport-x10 { height: 90px; }
         .reel-indicator-x10 { position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 4px; height: 100%; background-color: #f59e0b; z-index: 20; }
         .preview-grid-item { border-left: 6px solid; }
         @media (max-width: 640px) { .content-area { padding: 10px; padding-top: 70px; padding-bottom: 70px; } #home-section, #inventory-section, #cases-section, #settings-section, #case-details-section { padding-top: 20px; } }
@@ -1854,13 +1838,6 @@
                 <p class="text-lg font-semibold">Данные игры</p>
                 <button onclick="window.showResetConfirmation()" class="w-full px-4 py-3 bg-red-600 hover:bg-red-500 font-semibold rounded-lg">Сбросить Прогресс</button>
             </div>
-             <div class="p-6 rounded-xl space-y-4 shadow-xl mt-4">
-                <p class="text-lg font-semibold">Добавить Лапки</p>
-                 <div class="flex space-x-2">
-                     <input type="number" id="paws-add-input" class="w-full border rounded-lg p-2 text-center text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-500" placeholder="Сумма лапок">
-                     <button onclick="window.addPawsFromInput()" class="px-4 py-2 bg-green-600 hover:bg-green-500 text-white font-semibold rounded-lg">Ввод</button>
-                </div>
-            </div>
         </section>
     </main>
 
@@ -1907,9 +1884,9 @@
         </div>
     </div>
     <div id="x10-spin-modal" class="modal fixed inset-0 flex items-center justify-center z-[1200] p-4" style="display: none;">
-        <div class="modal-content p-4 rounded-2xl w-full max-w-xl">
+        <div class="modal-content p-4 rounded-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
             <h3 class="text-2xl font-extrabold text-center mb-4">Открытие x10...</h3>
-            <div id="x10-reels-container" class="grid grid-cols-5 gap-2">
+            <div id="x10-reels-container" class="flex flex-col space-y-2 overflow-y-auto">
                 <!-- Reels will be generated here -->
             </div>
         </div>
@@ -1943,3 +1920,4 @@
     </div>
 </body>
 </html>
+
